@@ -21,6 +21,10 @@ Output: `out/<name>.mp4` at 1920×1080 / 30fps / ~45s.
 
 ## Live preview in a browser
 
+**Hosted:** <https://nicksonthc.github.io/kml-3d-flyby/> — no install, just drop a KML.
+
+Or run locally:
+
 ```sh
 open flyby.html
 ```
