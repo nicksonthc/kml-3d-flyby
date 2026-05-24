@@ -1,0 +1,12 @@
+{
+  "name": "kml-3d-flyby",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node render.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

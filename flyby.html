@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KML 3D Flyby</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  #map { position:absolute; inset:0; background:#000; }
+
+  #picker { position:absolute; top:24px; left:24px; z-index:20;
+    background:rgba(0,0,0,0.72); padding:14px 18px; border-radius:10px;
+    backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,0.1); }
+  #picker label { font-size:13px; opacity:0.85; }
+  #picker input { margin-top:8px; color:#fff; }
+  body.playing #picker { display:none; }
+
+  #overlay { position:absolute; inset:0; pointer-events:none; z-index:10; }
+  #overlay.hidden { display:none; }
+
+  .meta-card { position:absolute; top:40px; right:48px; text-align:right; }
+  .meta-card .loc { font-size:18px; font-weight:700; letter-spacing:2px;
+    text-transform:uppercase; text-shadow:0 2px 12px rgba(0,0,0,0.9); }
+  .meta-card .date { font-size:13px; opacity:0.75; margin-top:6px; letter-spacing:3px; }
+
+  .stat-card { position:absolute; bottom:44px; left:48px;
+    transition: opacity 0.6s ease-out; }
+  body.ending .stat-card, body.ending .lap-chip { opacity: 0; }
+  .stat-card .distance { font-size:88px; font-weight:200; line-height:0.95;
+    letter-spacing:-3px; text-shadow:0 4px 24px rgba(0,0,0,0.95);
+    font-variant-numeric: tabular-nums; }
+  .stat-card .distance .unit { font-size:24px; opacity:0.7; margin-left:10px;
+    font-weight:400; letter-spacing:2px; }
+  .stat-card .row { display:flex; gap:40px; margin-top:18px; }
+  .stat-card .row .label { font-size:11px; opacity:0.6; letter-spacing:2.5px;
+    text-transform:uppercase; }
+  .stat-card .row .value { font-size:22px; font-weight:500; margin-top:3px;
+    font-variant-numeric: tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.8); }
+
+  .lap-chip { position:absolute; bottom:48px; right:48px; padding:13px 22px;
+    background:rgba(252,76,2,0.92); border-radius:999px;
+    font-weight:700; letter-spacing:2.5px; font-size:14px; text-transform:uppercase;
+    box-shadow:0 4px 24px rgba(252,76,2,0.4); display:none;
+    transition: opacity 0.6s ease-out; }
+
+  .end-card { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; opacity:0; transition: opacity 0.8s ease-out;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+  .end-card.shown { opacity:1; }
+  .end-card .big { font-size:140px; font-weight:200; line-height:1;
+    letter-spacing:-5px; font-variant-numeric: tabular-nums;
+    text-shadow:0 8px 32px rgba(0,0,0,0.9); }
+  .end-card .big .u { font-size:36px; opacity:0.55; letter-spacing:0; }
+  .end-card .sub { font-size:24px; margin-top:14px; opacity:0.88;
+    font-variant-numeric: tabular-nums; }
+  .end-card .pace { font-size:14px; margin-top:16px; opacity:0.55;
+    letter-spacing:4px; text-transform:uppercase; }
+  .end-card .center { text-align:center; }
+
+  .maplibregl-ctrl-attrib { font-size:9px; opacity:0.4; }
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { z-index:5; }
+</style>
+</head>
+<body>
+<div id="picker">
+  <label>Drop a Garmin KML to start the flyby</label><br>
+  <input type="file" id="kmlInput" accept=".kml">
+</div>
+<div id="map"></div>
+<div id="overlay" class="hidden">
+  <div class="meta-card">
+    <div class="loc" id="locName">—</div>
+    <div class="date" id="dateText">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="distance"><span id="distVal">0.00</span><span class="unit">KM</span></div>
+    <div class="row">
+      <div><div class="label">Pace</div><div class="value" id="paceVal">—:—/km</div></div>
+      <div><div class="label">Elapsed</div><div class="value" id="elapsedVal">0:00</div></div>
+    </div>
+  </div>
+  <div class="lap-chip" id="lapChip">LAP 1</div>
+  <div class="end-card" id="endCard">
+    <div class="center">
+      <div class="big"><span id="finalDist">0</span><span class="u"> KM</span></div>
+      <div class="sub">in <span id="finalTime">—</span></div>
+      <div class="pace">AVG <span id="finalPace">—:—</span> / KM</div>
+    </div>
+  </div>
+</div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const ROUTE_COLOR = '#FC4C02';
+const DURATION_S = 45;
+const REVEAL_FRACTION = 0.88;
+const END_FRACTION = 0.94;
+const PITCH = 60;
+const ZOOM = 16.2;
+// Bearing target = direction of a chord spanning BEHIND_M before and AHEAD_M
+// after the current position — averages out sharp local turns.
+const BEHIND_M = 50;
+const AHEAD_M = 150;
+// Camera rotation eases toward target with this time constant (wall seconds).
+// Bigger = slower / less vertigo. ~1.5s = gentle pan, ~0.5s = snappy, ~3s = floaty.
+const BEARING_TIME_CONSTANT_S = 1.5;
+const FPS_RENDER = 30;  // must match render.js FPS
+
+const params = new URLSearchParams(location.search);
+const RENDER_MODE = params.get('render') === '1';
+
+let map = null;
+let routeData = null;
+let lastBearing = null;
+let lastFrameWallMs = null;
+
+function haversineM(a, b) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+  const s = Math.sin(dLat/2)**2 + Math.sin(dLon/2)**2 * Math.cos(lat1) * Math.cos(lat2);
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+}
+
+function bearingDeg(a, b) {
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+  const lat1 = toRad(a[1]), lat2 = toRad(b[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function easeBearing(prev, next, alpha) {
+  if (prev === null || prev === undefined) return next;
+  let d = next - prev;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return (prev + d * alpha + 360) % 360;
+}
+
+function parseKml(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const lsNode = doc.querySelector('Placemark LineString coordinates');
+  if (!lsNode) throw new Error('No LineString found in KML');
+  const coords = lsNode.textContent.trim().split(/\s+/).map(s => {
+    const [lon, lat] = s.split(',').map(Number);
+    return [lon, lat];
+  }).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+
+  const cumDists = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cumDists.push(cumDists[i-1] + haversineM(coords[i-1], coords[i]));
+  }
+  const totalM = cumDists[cumDists.length - 1];
+
+  const folderName = doc.querySelector('Folder > name')?.textContent?.trim() ?? 'Activity';
+
+  const startDesc = doc.querySelector('Placemark > description')?.textContent ?? '';
+  let totalSec = null;
+  const mt = startDesc.match(/Time\s*:?\s*<\/td>\s*<td[^>]*>\s*(\d+):(\d+):(\d+)/);
+  if (mt) totalSec = parseInt(mt[1])*3600 + parseInt(mt[2])*60 + parseInt(mt[3]);
+  let officialKm = null;
+  const md = startDesc.match(/Distance:\s*<\/td>\s*<td[^>]*>\s*([\d.]+)/);
+  if (md) officialKm = parseFloat(md[1]);
+
+  let dateText = '';
+  const dm = startDesc.match(/\b(\w{3})\s+(\w{3})\s+(\d{1,2})\s+\d{1,2}:\d{2}:\d{2}\s+\w+\s+(\d{4})/);
+  if (dm) dateText = `${dm[3]} ${dm[2].toUpperCase()} ${dm[4]}`;
+
+  const laps = [];
+  doc.querySelectorAll('Placemark').forEach(pm => {
+    const nm = pm.querySelector('name')?.textContent ?? '';
+    if (!/^Lap \d+$/.test(nm)) return;
+    const desc = pm.querySelector('description')?.textContent ?? '';
+    const tm = desc.match(/Time:\s*<\/td>\s*<td[^>]*>\s*(\d+):(\d+):(\d+)/);
+    const dm = desc.match(/Distance:\s*<\/td>\s*<td[^>]*>\s*([\d.]+)/);
+    if (tm) {
+      const sec = parseInt(tm[1])*3600 + parseInt(tm[2])*60 + parseInt(tm[3]);
+      const km = dm ? parseFloat(dm[1]) : 1.0;
+      laps.push({ name: nm, sec, km });
+    }
+  });
+
+  return {
+    coords, cumDists,
+    totalKm: totalM / 1000,
+    officialKm,
+    totalSec,
+    laps,
+    name: folderName,
+    dateText
+  };
+}
+
+function pointAtDist(d) {
+  const { coords, cumDists } = routeData;
+  const total = cumDists[cumDists.length-1];
+  if (d <= 0) return coords[0];
+  if (d >= total) return coords[coords.length-1];
+  let lo = 0, hi = cumDists.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (cumDists[mid] <= d) lo = mid; else hi = mid;
+  }
+  const segLen = cumDists[hi] - cumDists[lo];
+  const f = segLen === 0 ? 0 : (d - cumDists[lo]) / segLen;
+  return [
+    coords[lo][0] + f * (coords[hi][0] - coords[lo][0]),
+    coords[lo][1] + f * (coords[hi][1] - coords[lo][1])
+  ];
+}
+
+function fmtTime(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function fmtPace(secPerKm) {
+  if (!isFinite(secPerKm) || secPerKm <= 0) return '—:—';
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function easeInOut(t) {
+  t = Math.min(Math.max(t, 0), 1);
+  return 0.5 - 0.5 * Math.cos(Math.PI * t);
+}
+
+function gradientForProgress(p) {
+  if (p >= 0.999) {
+    return ['interpolate', ['linear'], ['line-progress'],
+      0, ROUTE_COLOR, 1, ROUTE_COLOR];
+  }
+  const pp = Math.max(0.0001, Math.min(0.99, p));
+  return ['interpolate', ['linear'], ['line-progress'],
+    0, ROUTE_COLOR,
+    pp, ROUTE_COLOR,
+    Math.min(pp + 0.004, 0.999), 'rgba(0,0,0,0)',
+    1, 'rgba(0,0,0,0)'];
+}
+
+function drawFrame(t) {
+  document.getElementById('overlay').classList.remove('hidden');
+
+  const revealT = easeInOut(Math.min(t / REVEAL_FRACTION, 1));
+  const totalM = routeData.cumDists[routeData.cumDists.length-1];
+  const currentM = revealT * totalM;
+  const currentKm = currentM / 1000;
+
+  // Framerate-independent dt for bearing easing.
+  // Render mode: assume target video FPS. Live: real wall-clock delta (clamped).
+  let dt;
+  if (RENDER_MODE) {
+    dt = 1 / FPS_RENDER;
+  } else {
+    const now = performance.now();
+    dt = (lastFrameWallMs === null) ? (1/60) : Math.min((now - lastFrameWallMs) / 1000, 1/15);
+    lastFrameWallMs = now;
+  }
+  const bearingAlpha = 1 - Math.exp(-dt / BEARING_TIME_CONSTANT_S);
+
+  // Camera position = current point on route.
+  // Camera bearing = direction of a chord around the current point, then eased
+  // toward that target with BEARING_TIME_CONSTANT_S settle time.
+  const pos = pointAtDist(currentM);
+  const back = pointAtDist(Math.max(currentM - BEHIND_M, 0));
+  const ahead = pointAtDist(Math.min(currentM + AHEAD_M, totalM));
+  let bearing;
+  if (ahead[0] === back[0] && ahead[1] === back[1]) {
+    bearing = lastBearing ?? 0;
+  } else {
+    const rawBearing = bearingDeg(back, ahead);
+    bearing = easeBearing(lastBearing, rawBearing, bearingAlpha);
+  }
+  lastBearing = bearing;
+
+  map.jumpTo({ center: pos, bearing, pitch: PITCH, zoom: ZOOM });
+
+  // Route reveal
+  const grad = gradientForProgress(revealT);
+  if (map.getLayer('route-line')) map.setPaintProperty('route-line', 'line-gradient', grad);
+  if (map.getLayer('route-glow')) map.setPaintProperty('route-glow', 'line-gradient', grad);
+
+  // Distance counter
+  document.getElementById('distVal').textContent = currentKm.toFixed(2);
+  document.getElementById('locName').textContent = routeData.name;
+  document.getElementById('dateText').textContent = routeData.dateText;
+
+  // Pace + elapsed from laps
+  let elapsedSec = 0;
+  let paceSecPerKm = 0;
+  if (routeData.laps.length > 0) {
+    let kmLeft = currentKm;
+    for (let i = 0; i < routeData.laps.length && kmLeft > 0; i++) {
+      const lapKm = routeData.laps[i].km;
+      const lapSec = routeData.laps[i].sec;
+      if (kmLeft >= lapKm) {
+        elapsedSec += lapSec;
+        kmLeft -= lapKm;
+      } else {
+        elapsedSec += lapSec * (kmLeft / lapKm);
+        kmLeft = 0;
+      }
+    }
+    const idx = Math.min(Math.floor(currentKm), routeData.laps.length - 1);
+    const lap = routeData.laps[idx];
+    if (lap) paceSecPerKm = lap.sec / lap.km;
+  } else if (routeData.totalSec) {
+    elapsedSec = (currentKm / routeData.totalKm) * routeData.totalSec;
+    paceSecPerKm = routeData.totalSec / routeData.totalKm;
+  }
+  document.getElementById('paceVal').textContent = `${fmtPace(paceSecPerKm)}/km`;
+  document.getElementById('elapsedVal').textContent = fmtTime(elapsedSec);
+
+  // Lap chip
+  const chip = document.getElementById('lapChip');
+  if (currentKm > 0.04) {
+    chip.style.display = 'block';
+    const lapNum = Math.min(Math.floor(currentKm) + 1, Math.max(1, Math.ceil(routeData.totalKm)));
+    chip.textContent = `LAP ${lapNum}`;
+  } else {
+    chip.style.display = 'none';
+  }
+
+  // End card
+  const endCard = document.getElementById('endCard');
+  if (t >= END_FRACTION) {
+    endCard.classList.add('shown');
+    document.body.classList.add('ending');
+    document.getElementById('finalDist').textContent = (routeData.officialKm ?? routeData.totalKm).toFixed(2);
+    document.getElementById('finalTime').textContent = routeData.totalSec ? fmtTime(routeData.totalSec) : '—';
+    const km = routeData.officialKm ?? routeData.totalKm;
+    const avg = (routeData.totalSec && km) ? routeData.totalSec / km : 0;
+    document.getElementById('finalPace').textContent = fmtPace(avg);
+  } else {
+    endCard.classList.remove('shown');
+    document.body.classList.remove('ending');
+  }
+}
+
+async function waitMapIdle() {
+  if (map.areTilesLoaded() && !map.isMoving()) return;
+  await new Promise(resolve => map.once('idle', resolve));
+}
+
+window.renderFrame = async function(t) {
+  drawFrame(t);
+  await waitMapIdle();
+  await new Promise(r => requestAnimationFrame(r));
+};
+
+function initMap(routeCoords) {
+  const lons = routeCoords.map(p => p[0]);
+  const lats = routeCoords.map(p => p[1]);
+  const center = [(Math.min(...lons)+Math.max(...lons))/2, (Math.min(...lats)+Math.max(...lats))/2];
+
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        sat: {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: 'Imagery © Esri, Maxar, Earthstar Geographics'
+        }
+      },
+      layers: [
+        { id: 'bg', type: 'background', paint: { 'background-color': '#06090f' } },
+        { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-fade-duration': 0 } }
+      ]
+    },
+    center, zoom: ZOOM, pitch: PITCH, bearing: 0,
+    interactive: false, fadeDuration: 0, attributionControl: { compact: true }
+  });
+
+  return new Promise(resolve => {
+    map.on('load', () => {
+      map.addSource('route', {
+        type: 'geojson', lineMetrics: true,
+        data: { type: 'Feature', properties: {},
+          geometry: { type: 'LineString', coordinates: routeCoords } }
+      });
+      map.addLayer({
+        id: 'route-glow', type: 'line', source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_COLOR, 'line-width': 22,
+          'line-opacity': 0.55, 'line-blur': 16 }
+      });
+      map.addLayer({
+        id: 'route-line', type: 'line', source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_COLOR, 'line-width': 5, 'line-opacity': 1 }
+      });
+      drawFrame(0);
+      resolve();
+    });
+  });
+}
+
+async function startWithKmlText(text) {
+  routeData = parseKml(text);
+  lastBearing = null;
+  lastFrameWallMs = null;
+  document.body.classList.remove('ending');
+  await initMap(routeData.coords);
+  document.body.classList.add('playing');
+
+  if (RENDER_MODE) {
+    window.flybyReady = true;
+    return;
+  }
+
+  let startT = null;
+  function step(now) {
+    if (startT === null) startT = now;
+    const t = Math.min((now - startT) / 1000 / DURATION_S, 1);
+    drawFrame(t);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+window.loadKmlText = startWithKmlText;
+
+document.getElementById('kmlInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  startWithKmlText(text);
+});
+</script>
+</body>
+</html>
