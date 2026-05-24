@@ -5,61 +5,93 @@
 <title>KML 3D Flyby</title>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
-  html, body { margin:0; padding:0; height:100%; background:#000; color:#fff;
+  :root { --stage-w: 1080px; --stage-h: 1920px; --scale: 1; }
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#fff; overflow:hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased; }
+
+  /* Fixed 1080x1920 portrait stage. Scaled to fit any window, but the
+     internal coordinate system is always 1080x1920 — matches the render
+     viewport so what you see is what gets recorded. */
+  .stage { position:absolute; top:50%; left:50%; width:var(--stage-w); height:var(--stage-h);
+    transform: translate(-50%, -50%) scale(var(--scale));
+    transform-origin: center center;
+    background:#000; overflow:hidden; }
+
   #map { position:absolute; inset:0; background:#000; }
 
-  #picker { position:absolute; top:24px; left:24px; z-index:20;
-    background:rgba(0,0,0,0.72); padding:14px 18px; border-radius:10px;
-    backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,0.1); }
+  /* Picker + record button live OUTSIDE the stage so they stay
+     real-sized in the browser, independent of stage scale. */
+  #picker { position:fixed; top:24px; left:24px; z-index:50;
+    background:rgba(0,0,0,0.78); padding:14px 18px; border-radius:10px;
+    backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,0.12); }
   #picker label { font-size:13px; opacity:0.85; }
   #picker input { margin-top:8px; color:#fff; }
   body.playing #picker { display:none; }
 
+  #recordBtn { position:fixed; top:24px; right:24px; z-index:50;
+    display:none; padding:10px 16px; border-radius:999px; border:1px solid rgba(255,255,255,0.18);
+    background:rgba(0,0,0,0.78); backdrop-filter: blur(8px);
+    color:#fff; font: 600 13px/1 -apple-system, "Inter", sans-serif; letter-spacing:1.5px;
+    text-transform:uppercase; cursor:pointer; }
+  #recordBtn:hover { background:rgba(20,20,20,0.85); }
+  #recordBtn.recording { background:rgba(252,76,2,0.92); border-color:rgba(252,76,2,1);
+    box-shadow:0 4px 24px rgba(252,76,2,0.4); }
+  #recordBtn .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:#fc4c02; margin-right:8px; vertical-align:middle; }
+  #recordBtn.recording .dot { background:#fff; animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:0.25; } }
+  body.has-kml #recordBtn { display:block; }
+  body.recording #picker { display:none; }
+  body.render-mode #picker, body.render-mode #recordBtn, body.render-mode #hint { display:none !important; }
+
+  #hint { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:50;
+    font-size:12px; opacity:0.55; letter-spacing:1.5px; text-transform:uppercase;
+    pointer-events:none; }
+
   #overlay { position:absolute; inset:0; pointer-events:none; z-index:10; }
   #overlay.hidden { display:none; }
 
-  .meta-card { position:absolute; top:40px; right:48px; text-align:right; }
-  .meta-card .loc { font-size:18px; font-weight:700; letter-spacing:2px;
+  .meta-card { position:absolute; top:60px; right:60px; text-align:right; }
+  .meta-card .loc { font-size:26px; font-weight:700; letter-spacing:3px;
     text-transform:uppercase; text-shadow:0 2px 12px rgba(0,0,0,0.9); }
-  .meta-card .date { font-size:13px; opacity:0.75; margin-top:6px; letter-spacing:3px; }
+  .meta-card .date { font-size:16px; opacity:0.75; margin-top:8px; letter-spacing:4px; }
 
-  .stat-card { position:absolute; bottom:44px; left:48px;
+  .stat-card { position:absolute; bottom:140px; left:60px;
     transition: opacity 0.6s ease-out; }
   body.ending .stat-card, body.ending .lap-chip { opacity: 0; }
-  .stat-card .distance { font-size:88px; font-weight:200; line-height:0.95;
-    letter-spacing:-3px; text-shadow:0 4px 24px rgba(0,0,0,0.95);
+  .stat-card .distance { font-size:128px; font-weight:200; line-height:0.95;
+    letter-spacing:-4px; text-shadow:0 4px 24px rgba(0,0,0,0.95);
     font-variant-numeric: tabular-nums; }
-  .stat-card .distance .unit { font-size:24px; opacity:0.7; margin-left:10px;
-    font-weight:400; letter-spacing:2px; }
-  .stat-card .row { display:flex; gap:40px; margin-top:18px; }
-  .stat-card .row .label { font-size:11px; opacity:0.6; letter-spacing:2.5px;
+  .stat-card .distance .unit { font-size:32px; opacity:0.7; margin-left:14px;
+    font-weight:400; letter-spacing:3px; }
+  .stat-card .row { display:flex; gap:56px; margin-top:24px; }
+  .stat-card .row .label { font-size:14px; opacity:0.6; letter-spacing:3px;
     text-transform:uppercase; }
-  .stat-card .row .value { font-size:22px; font-weight:500; margin-top:3px;
+  .stat-card .row .value { font-size:30px; font-weight:500; margin-top:6px;
     font-variant-numeric: tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.8); }
 
-  .lap-chip { position:absolute; bottom:48px; right:48px; padding:13px 22px;
+  .lap-chip { position:absolute; bottom:160px; right:60px; padding:16px 28px;
     background:rgba(252,76,2,0.92); border-radius:999px;
-    font-weight:700; letter-spacing:2.5px; font-size:14px; text-transform:uppercase;
+    font-weight:700; letter-spacing:3px; font-size:18px; text-transform:uppercase;
     box-shadow:0 4px 24px rgba(252,76,2,0.4); display:none;
     transition: opacity 0.6s ease-out; }
 
   .end-card { position:absolute; inset:0; display:flex; align-items:center;
     justify-content:center; opacity:0; transition: opacity 0.8s ease-out;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.75) 100%); }
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.78) 100%); }
   .end-card.shown { opacity:1; }
-  .end-card .big { font-size:140px; font-weight:200; line-height:1;
-    letter-spacing:-5px; font-variant-numeric: tabular-nums;
+  .end-card .big { font-size:180px; font-weight:200; line-height:1;
+    letter-spacing:-6px; font-variant-numeric: tabular-nums;
     text-shadow:0 8px 32px rgba(0,0,0,0.9); }
-  .end-card .big .u { font-size:36px; opacity:0.55; letter-spacing:0; }
-  .end-card .sub { font-size:24px; margin-top:14px; opacity:0.88;
+  .end-card .big .u { font-size:44px; opacity:0.55; letter-spacing:0; margin-left:8px; }
+  .end-card .sub { font-size:32px; margin-top:20px; opacity:0.88;
     font-variant-numeric: tabular-nums; }
-  .end-card .pace { font-size:14px; margin-top:16px; opacity:0.55;
-    letter-spacing:4px; text-transform:uppercase; }
+  .end-card .pace { font-size:18px; margin-top:22px; opacity:0.55;
+    letter-spacing:5px; text-transform:uppercase; }
   .end-card .center { text-align:center; }
 
-  .maplibregl-ctrl-attrib { font-size:9px; opacity:0.4; }
+  .maplibregl-ctrl-attrib { font-size:10px; opacity:0.4; }
   .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { z-index:5; }
 </style>
 </head>
@@ -68,25 +100,29 @@
   <label>Drop a Garmin KML to start the flyby</label><br>
   <input type="file" id="kmlInput" accept=".kml">
 </div>
-<div id="map"></div>
-<div id="overlay" class="hidden">
-  <div class="meta-card">
-    <div class="loc" id="locName">—</div>
-    <div class="date" id="dateText">—</div>
-  </div>
-  <div class="stat-card">
-    <div class="distance"><span id="distVal">0.00</span><span class="unit">KM</span></div>
-    <div class="row">
-      <div><div class="label">Pace</div><div class="value" id="paceVal">—:—/km</div></div>
-      <div><div class="label">Elapsed</div><div class="value" id="elapsedVal">0:00</div></div>
+<button id="recordBtn" title="Capture this tab as 1080x1920 MP4"><span class="dot"></span>Record MP4</button>
+<div id="hint">1080 × 1920 · vertical</div>
+<div class="stage" id="stage">
+  <div id="map"></div>
+  <div id="overlay" class="hidden">
+    <div class="meta-card">
+      <div class="loc" id="locName">—</div>
+      <div class="date" id="dateText">—</div>
     </div>
-  </div>
-  <div class="lap-chip" id="lapChip">LAP 1</div>
-  <div class="end-card" id="endCard">
-    <div class="center">
-      <div class="big"><span id="finalDist">0</span><span class="u"> KM</span></div>
-      <div class="sub">in <span id="finalTime">—</span></div>
-      <div class="pace">AVG <span id="finalPace">—:—</span> / KM</div>
+    <div class="stat-card">
+      <div class="distance"><span id="distVal">0.00</span><span class="unit">KM</span></div>
+      <div class="row">
+        <div><div class="label">Pace</div><div class="value" id="paceVal">—:—/km</div></div>
+        <div><div class="label">Elapsed</div><div class="value" id="elapsedVal">0:00</div></div>
+      </div>
+    </div>
+    <div class="lap-chip" id="lapChip">LAP 1</div>
+    <div class="end-card" id="endCard">
+      <div class="center">
+        <div class="big"><span id="finalDist">0</span><span class="u">KM</span></div>
+        <div class="sub">in <span id="finalTime">—</span></div>
+        <div class="pace">AVG <span id="finalPace">—:—</span> / KM</div>
+      </div>
     </div>
   </div>
 </div>
@@ -107,13 +143,30 @@ const AHEAD_M = 150;
 const BEARING_TIME_CONSTANT_S = 1.5;
 const FPS_RENDER = 30;  // must match render.js FPS
 
+const STAGE_W = 1080;
+const STAGE_H = 1920;
+
 const params = new URLSearchParams(location.search);
 const RENDER_MODE = params.get('render') === '1';
+if (RENDER_MODE) document.body.classList.add('render-mode');
 
 let map = null;
 let routeData = null;
 let lastBearing = null;
 let lastFrameWallMs = null;
+let playingRAF = null;
+let onPlaybackEnd = null;
+
+// Recording state — composite map+HUD onto a hidden canvas, capture that.
+let recording = null;        // { canvas, ctx } when active
+let lastDrawT = 0;
+
+function fitStage() {
+  const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+  document.documentElement.style.setProperty('--scale', scale);
+}
+window.addEventListener('resize', fitStage);
+fitStage();
 
 function haversineM(a, b) {
   const R = 6371000;
@@ -250,6 +303,7 @@ function gradientForProgress(p) {
 
 function drawFrame(t) {
   document.getElementById('overlay').classList.remove('hidden');
+  lastDrawT = t;
 
   const revealT = easeInOut(Math.min(t / REVEAL_FRACTION, 1));
   const totalM = routeData.cumDists[routeData.cumDists.length-1];
@@ -382,7 +436,17 @@ function initMap(routeCoords) {
       ]
     },
     center, zoom: ZOOM, pitch: PITCH, bearing: 0,
-    interactive: false, fadeDuration: 0, attributionControl: { compact: true }
+    interactive: false, fadeDuration: 0, attributionControl: { compact: true },
+    preserveDrawingBuffer: true
+  });
+
+  // When recording, copy the freshly rendered map frame + HUD onto the
+  // composite canvas. captureStream() then samples that canvas at ~30fps.
+  map.on('render', () => {
+    if (!recording) return;
+    const { ctx } = recording;
+    ctx.drawImage(map.getCanvas(), 0, 0, STAGE_W, STAGE_H);
+    drawHUD(ctx, lastDrawT);
   });
 
   return new Promise(resolve => {
@@ -409,6 +473,28 @@ function initMap(routeCoords) {
   });
 }
 
+function playOnce() {
+  if (playingRAF !== null) cancelAnimationFrame(playingRAF);
+  lastBearing = null;
+  lastFrameWallMs = null;
+  document.body.classList.remove('ending');
+  return new Promise(resolve => {
+    let startT = null;
+    function step(now) {
+      if (startT === null) startT = now;
+      const t = Math.min((now - startT) / 1000 / DURATION_S, 1);
+      drawFrame(t);
+      if (t < 1) {
+        playingRAF = requestAnimationFrame(step);
+      } else {
+        playingRAF = null;
+        resolve();
+      }
+    }
+    playingRAF = requestAnimationFrame(step);
+  });
+}
+
 async function startWithKmlText(text) {
   routeData = parseKml(text);
   lastBearing = null;
@@ -416,20 +502,14 @@ async function startWithKmlText(text) {
   document.body.classList.remove('ending');
   await initMap(routeData.coords);
   document.body.classList.add('playing');
+  document.body.classList.add('has-kml');
 
   if (RENDER_MODE) {
     window.flybyReady = true;
     return;
   }
 
-  let startT = null;
-  function step(now) {
-    if (startT === null) startT = now;
-    const t = Math.min((now - startT) / 1000 / DURATION_S, 1);
-    drawFrame(t);
-    if (t < 1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
+  await playOnce();
 }
 
 window.loadKmlText = startWithKmlText;
@@ -440,6 +520,322 @@ document.getElementById('kmlInput').addEventListener('change', async (e) => {
   const text = await file.text();
   startWithKmlText(text);
 });
+
+// ── In-browser MP4 recording ──────────────────────────────────────
+// Tab capture (getDisplayMedia) is unreliable with WebGL — frames
+// freeze. Instead we composite map + HUD onto a hidden 2D canvas at
+// native 1080x1920 and pipe its captureStream() to MediaRecorder.
+// The HUD is re-drawn in Canvas 2D (mirrors the CSS overlay).
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function setLetterSpacing(ctx, px) {
+  // Canvas 2D letterSpacing — Chrome 99+, Safari 16.4+. Silently
+  // ignored on older browsers; layout drifts slightly but doesn't break.
+  try { ctx.letterSpacing = `${px}px`; } catch {}
+}
+
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif';
+
+function drawHUD(ctx, t) {
+  const W = STAGE_W, H = STAGE_H;
+
+  // Re-derive the same numbers drawFrame() shows.
+  const revealT = easeInOut(Math.min(t / REVEAL_FRACTION, 1));
+  const totalM = routeData.cumDists[routeData.cumDists.length - 1];
+  const currentKm = (revealT * totalM) / 1000;
+
+  let elapsedSec = 0, paceSecPerKm = 0;
+  if (routeData.laps.length > 0) {
+    let kmLeft = currentKm;
+    for (let i = 0; i < routeData.laps.length && kmLeft > 0; i++) {
+      const lap = routeData.laps[i];
+      if (kmLeft >= lap.km) { elapsedSec += lap.sec; kmLeft -= lap.km; }
+      else { elapsedSec += lap.sec * (kmLeft / lap.km); kmLeft = 0; }
+    }
+    const idx = Math.min(Math.floor(currentKm), routeData.laps.length - 1);
+    const lap = routeData.laps[idx];
+    if (lap) paceSecPerKm = lap.sec / lap.km;
+  } else if (routeData.totalSec) {
+    elapsedSec = (currentKm / routeData.totalKm) * routeData.totalSec;
+    paceSecPerKm = routeData.totalSec / routeData.totalKm;
+  }
+
+  const isEnding = t >= END_FRACTION;
+  const fadeOut = isEnding ? 0 : 1;
+
+  ctx.save();
+  ctx.fillStyle = '#fff';
+
+  // Meta card (top-right)
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 2;
+  ctx.font = `700 26px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 3);
+  ctx.fillText((routeData.name || '').toUpperCase(), W - 60, 60);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.globalAlpha = 0.75;
+  ctx.font = `400 16px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 4);
+  ctx.fillText(routeData.dateText || '', W - 60, 96);
+  ctx.restore();
+
+  // Stat card + lap chip fade out near the end (matches CSS .ending behaviour).
+  if (fadeOut > 0) {
+    ctx.save();
+    ctx.globalAlpha = fadeOut;
+
+    // Stat card (bottom-left)
+    const STAT_LEFT = 60;
+    const STAT_BOTTOM = H - 140;
+    const ROW_VALUE_H = 30;
+    const ROW_LABEL_H = 14;
+    const ROW_GAP = 6;
+    const ROW_H = ROW_LABEL_H + ROW_GAP + ROW_VALUE_H;
+    const DIST_GAP = 24;
+
+    const labelY = STAT_BOTTOM - ROW_H;
+    const valueY = STAT_BOTTOM - ROW_VALUE_H;
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+
+    ctx.globalAlpha = 0.6 * fadeOut;
+    ctx.font = `400 14px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 3);
+    ctx.fillText('PACE', STAT_LEFT, labelY);
+    ctx.fillText('ELAPSED', STAT_LEFT + 220, labelY);
+
+    ctx.globalAlpha = fadeOut;
+    ctx.font = `500 30px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.fillText(`${fmtPace(paceSecPerKm)}/km`, STAT_LEFT, valueY);
+    ctx.fillText(fmtTime(elapsedSec), STAT_LEFT + 220, valueY);
+
+    // Distance number
+    ctx.shadowColor = 'rgba(0,0,0,0.95)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 4;
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `200 128px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -4);
+    const distText = currentKm.toFixed(2);
+    const distBaseline = labelY - DIST_GAP;
+    ctx.fillText(distText, STAT_LEFT, distBaseline);
+
+    const distWidth = ctx.measureText(distText).width;
+    ctx.globalAlpha = 0.7 * fadeOut;
+    ctx.font = `400 32px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 3);
+    ctx.fillText('KM', STAT_LEFT + distWidth + 14, distBaseline - 4);
+
+    // Lap chip
+    if (currentKm > 0.04) {
+      const lapNum = Math.min(Math.floor(currentKm) + 1, Math.max(1, Math.ceil(routeData.totalKm)));
+      const chipText = `LAP ${lapNum}`;
+      ctx.globalAlpha = fadeOut;
+      ctx.font = `700 18px ${FONT_STACK}`;
+      setLetterSpacing(ctx, 3);
+      ctx.textBaseline = 'middle';
+      const padX = 28, padY = 16;
+      const textW = ctx.measureText(chipText).width;
+      const chipW = textW + padX * 2;
+      const chipH = 18 + padY * 2;
+      const chipX = W - 60 - chipW;
+      const chipY = H - 160 - chipH;
+
+      ctx.shadowColor = 'rgba(252,76,2,0.4)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 4;
+      ctx.fillStyle = 'rgba(252,76,2,0.92)';
+      roundRect(ctx, chipX, chipY, chipW, chipH, chipH / 2);
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(chipText, chipX + padX, chipY + chipH / 2);
+    }
+    ctx.restore();
+  }
+
+  // End card
+  if (isEnding) {
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.75);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.35, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 32;
+    ctx.shadowOffsetY = 8;
+
+    const finalKm = (routeData.officialKm ?? routeData.totalKm).toFixed(2);
+    const finalTime = routeData.totalSec ? fmtTime(routeData.totalSec) : '—';
+    const km = routeData.officialKm ?? routeData.totalKm;
+    const avgPace = (routeData.totalSec && km) ? fmtPace(routeData.totalSec / km) : '—:—';
+
+    // Big distance + " KM" — measure each piece to center the whole combo.
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `200 180px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -6);
+    const bigW = ctx.measureText(finalKm).width;
+    ctx.font = `400 44px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    const unitW = ctx.measureText(' KM').width;
+    const totalW = bigW + unitW;
+    const startX = (W - totalW) / 2;
+    const bigBaselineY = H / 2 + 40;
+
+    ctx.font = `200 180px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -6);
+    ctx.textAlign = 'left';
+    ctx.fillText(finalKm, startX, bigBaselineY);
+
+    ctx.font = `400 44px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.globalAlpha = 0.55;
+    ctx.fillText(' KM', startX + bigW, bigBaselineY);
+    ctx.globalAlpha = 1;
+
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = 0.88;
+    ctx.font = `400 32px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.fillText(`in ${finalTime}`, W / 2, bigBaselineY + 30);
+
+    ctx.globalAlpha = 0.55;
+    ctx.font = `400 18px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 4);
+    ctx.fillText(`AVG ${avgPace} / KM`, W / 2, bigBaselineY + 80);
+  }
+
+  ctx.restore();
+}
+
+function pickMime() {
+  const candidates = [
+    'video/mp4;codecs=avc1.640034',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ];
+  for (const m of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+async function recordFlyby() {
+  if (!routeData) { alert('Load a KML first.'); return; }
+  if (!window.MediaRecorder) { alert('Your browser does not support MediaRecorder.'); return; }
+
+  const btn = document.getElementById('recordBtn');
+  const hint = document.getElementById('hint');
+
+  // Hidden composite canvas — both map and HUD get drawn here, and
+  // captureStream() pulls frames straight from it. No tab-capture
+  // permission popup; no WebGL freeze; native 1080x1920 quality.
+  const canvas = document.createElement('canvas');
+  canvas.width = STAGE_W;
+  canvas.height = STAGE_H;
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  // Seed one frame so captureStream has something to sample immediately.
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+  try {
+    ctx.drawImage(map.getCanvas(), 0, 0, STAGE_W, STAGE_H);
+    drawHUD(ctx, 0);
+  } catch (err) {
+    console.warn('Initial composite failed:', err);
+  }
+
+  const stream = canvas.captureStream(30);
+  const mime = pickMime();
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const recOpts = { videoBitsPerSecond: 12_000_000 };
+  if (mime) recOpts.mimeType = mime;
+
+  let rec;
+  try {
+    rec = new MediaRecorder(stream, recOpts);
+  } catch (err) {
+    console.error('MediaRecorder failed:', err);
+    alert('Recording failed: ' + err.message);
+    return;
+  }
+
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(resolve => rec.addEventListener('stop', resolve, { once: true }));
+
+  recording = { canvas, ctx };
+  document.body.classList.add('recording');
+  btn.classList.add('recording');
+  btn.innerHTML = '<span class="dot"></span>Recording…';
+  if (hint) hint.textContent = 'Recording — please wait';
+
+  rec.start(250);
+
+  try {
+    await playOnce();
+    // Hold the end card for a beat so it's clearly visible in the MP4.
+    await new Promise(r => setTimeout(r, 1500));
+  } finally {
+    try { rec.stop(); } catch {}
+    await stopped;
+    stream.getTracks().forEach(t => t.stop());
+    recording = null;
+    document.body.classList.remove('recording');
+    btn.classList.remove('recording');
+    btn.innerHTML = '<span class="dot"></span>Record MP4';
+    if (hint) hint.textContent = '1080 × 1920 · vertical';
+  }
+
+  const blob = new Blob(chunks, { type: mime || 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const safeName = (routeData?.name || 'flyby').replace(/[^\w-]+/g, '_').slice(0, 40);
+  a.href = url;
+  a.download = `${safeName}-${stamp}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  if (ext === 'webm') {
+    console.log('Saved as .webm (this browser cannot encode MP4 directly). ' +
+      'Remux losslessly: ffmpeg -i in.webm -c copy out.mp4 — or run `npm run render <kml>` for true H.264.');
+  }
+}
+
+document.getElementById('recordBtn').addEventListener('click', recordFlyby);
 </script>
 </body>
 </html>
