@@ -129,11 +129,28 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const ROUTE_COLOR = '#FC4C02';
-const DURATION_S = 45;
+// Duration scales with distance (Strava-style): longer activities get
+// proportionally longer playback. Recomputed each time a KML loads.
+// Formula: 20s base + 2.5s per km, clamped to [25s, 150s].
+//   5 km → 32.5s · 10 km → 45s · 21 km → 72.5s · 42 km → 125s
+const DURATION_BASE_S = 20;
+const DURATION_PER_KM_S = 2.5;
+const DURATION_MIN_S = 25;
+const DURATION_MAX_S = 150;
+let DURATION_S = 45;  // initial; replaced once KML is parsed
+function computeDurationS(km) {
+  return Math.max(DURATION_MIN_S,
+    Math.min(DURATION_MAX_S, DURATION_BASE_S + km * DURATION_PER_KM_S));
+}
 const REVEAL_FRACTION = 0.88;
 const END_FRACTION = 0.94;
 const PITCH = 60;
-const ZOOM = 16.2;
+// Camera zooms in close while flying along the route, then eases out
+// near the end so you can see the full path before the end card.
+const ZOOM_FLY = 17.4;
+const ZOOM_END = 15.2;
+// Where the pull-back starts (as a fraction of total duration).
+const ZOOM_OUT_START = 0.82;
 // Bearing target = direction of a chord spanning BEHIND_M before and AHEAD_M
 // after the current position — averages out sharp local turns.
 const BEHIND_M = 50;
@@ -337,7 +354,17 @@ function drawFrame(t) {
   }
   lastBearing = bearing;
 
-  map.jumpTo({ center: pos, bearing, pitch: PITCH, zoom: ZOOM });
+  // Hold ZOOM_FLY until ZOOM_OUT_START, then ease toward ZOOM_END so the
+  // viewer gets context on the full route before the end card fades in.
+  let zoom;
+  if (t <= ZOOM_OUT_START) {
+    zoom = ZOOM_FLY;
+  } else {
+    const zt = easeInOut((t - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
+    zoom = ZOOM_FLY + (ZOOM_END - ZOOM_FLY) * zt;
+  }
+
+  map.jumpTo({ center: pos, bearing, pitch: PITCH, zoom });
 
   // Route reveal
   const grad = gradientForProgress(revealT);
@@ -435,7 +462,7 @@ function initMap(routeCoords) {
         { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-fade-duration': 0 } }
       ]
     },
-    center, zoom: ZOOM, pitch: PITCH, bearing: 0,
+    center, zoom: ZOOM_FLY, pitch: PITCH, bearing: 0,
     interactive: false, fadeDuration: 0, attributionControl: { compact: true },
     preserveDrawingBuffer: true
   });
@@ -497,6 +524,8 @@ function playOnce() {
 
 async function startWithKmlText(text) {
   routeData = parseKml(text);
+  DURATION_S = computeDurationS(routeData.officialKm ?? routeData.totalKm);
+  window.flybyDurationS = DURATION_S;  // render.js reads this to size the frame count
   lastBearing = null;
   lastFrameWallMs = null;
   document.body.classList.remove('ending');

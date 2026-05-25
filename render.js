@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// --- Config (keep DURATION_S in sync with flyby.html) ---
-const DURATION_S  = 45;
+// --- Config ---
+// DURATION_S is computed inside flyby.html based on route distance
+// (Strava-style scaling) and read back here after the KML loads.
 const FPS         = 30;
 const WIDTH       = 1080;
 const HEIGHT      = 1920;
-const TOTAL_FRAMES = DURATION_S * FPS;
 const INITIAL_TILE_WAIT_MS = 3000;
 
 const kmlArg = process.argv[2];
@@ -33,7 +33,7 @@ fs.mkdirSync(path.dirname(outPath), { recursive: true });
 const flybyUrl = 'file://' + path.join(__dirname, 'flyby.html') + '?render=1';
 
 console.log(`Rendering ${baseName} → ${outPath}`);
-console.log(`  ${WIDTH}x${HEIGHT} @ ${FPS}fps · ${DURATION_S}s · ${TOTAL_FRAMES} frames`);
+console.log(`  ${WIDTH}x${HEIGHT} @ ${FPS}fps · duration: scaling with distance…`);
 
 const browser = await chromium.launch();
 const page = await browser.newPage({
@@ -46,6 +46,10 @@ page.on('pageerror', e => console.error('  [browser-error]', e.message));
 await page.goto(flybyUrl);
 await page.evaluate(text => window.loadKmlText(text), kmlText);
 await page.waitForFunction(() => window.flybyReady === true, { timeout: 30000 });
+
+const DURATION_S = await page.evaluate(() => window.flybyDurationS);
+const TOTAL_FRAMES = Math.round(DURATION_S * FPS);
+console.log(`  duration: ${DURATION_S.toFixed(1)}s · ${TOTAL_FRAMES} frames`);
 
 console.log(`Warming tile cache for ${INITIAL_TILE_WAIT_MS}ms…`);
 await page.waitForTimeout(INITIAL_TILE_WAIT_MS);

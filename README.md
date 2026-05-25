@@ -1,6 +1,6 @@
 # kml-3d-flyby
 
-> Turn any Garmin KML activity into a 45-second cinematic 3D flyby MP4.
+> Turn any Garmin KML activity into a cinematic 3D flyby MP4 — duration scales with route length, Strava-style.
 
 ![5-second teaser of the cinematic flyby](docs/demo.gif)
 
@@ -17,7 +17,9 @@ npx playwright install chromium
 node render.js kml/activity_22906933937.kml
 ```
 
-Output: `out/<name>.mp4` at 1920×1080 / 30fps / ~45s.
+Output: `out/<name>.mp4` at 1080×1920 portrait / 30fps. Length is computed
+from route distance (~25 s for a quick 2 km loop, ~45 s for a 10 K,
+~2 min for a marathon — see [Duration scaling](#duration-scaling)).
 
 ## Live preview in a browser
 
@@ -49,21 +51,49 @@ ready to drop into the picker above or pass to `render.js`.
 - Camera tracks position at pitch 60°, bearing = chord direction
   (50 m behind → 150 m ahead), eased with a ~1.5 s time constant for a
   smooth pan without vertigo.
+- Camera zoom is close (17.4) during the flight, then eases out to 15.2
+  in the final ~18 % of the timeline so the full route is visible before
+  the end card.
 - Overlay shows distance / pace / elapsed / lap chip, end card fades in.
 - `?render=1` swaps wall-clock animation for deterministic
   `window.renderFrame(t)` calls driven by Playwright; ffmpeg encodes the
   PNG stream into MP4.
 
+## Duration scaling
+
+Fixed-length flybys feel rushed for a marathon and dragged-out for a
+parkrun, so duration scales with the activity's distance — same idea
+Strava uses for its 3D Flyover. The formula (top of `flyby.html`):
+
+```
+duration_s = clamp(20 + km × 2.5, 25, 150)
+```
+
+| Distance | Flyby length |
+|---:|---:|
+| 2 km   | 25 s (min) |
+| 5 km   | 32.5 s |
+| 10 km  | 45 s |
+| 21 km  | 72.5 s |
+| 42 km  | 125 s |
+| 60+ km | 150 s (max) |
+
+`flyby.html` recomputes this each time a KML loads and exposes it as
+`window.flybyDurationS`; `render.js` reads it back to size the MP4 frame
+count, so live preview and exported video stay in sync.
+
 ## Tweak
 
 | Knob | File | Default |
 |---|---|---|
-| Duration | `flyby.html` `DURATION_S` | 45 s |
+| Duration curve | `flyby.html` `DURATION_BASE_S` / `DURATION_PER_KM_S` | 20 s + 2.5 s/km |
+| Duration clamp | `flyby.html` `DURATION_MIN_S` / `DURATION_MAX_S` | 25 s / 150 s |
 | Route color | `flyby.html` `ROUTE_COLOR` | `#FC4C02` |
 | Pitch | `flyby.html` `PITCH` | 60° |
-| Zoom | `flyby.html` `ZOOM` | 16.2 |
+| Zoom (close / wide) | `flyby.html` `ZOOM_FLY` / `ZOOM_END` | 17.4 / 15.2 |
+| Pull-back start | `flyby.html` `ZOOM_OUT_START` | 0.82 (82 % through) |
 | Camera ease | `flyby.html` `BEARING_TIME_CONSTANT_S` | 1.5 s |
-| Output FPS / size | `render.js` `FPS` / `WIDTH` / `HEIGHT` | 30 / 1920 / 1080 |
+| Output FPS / size | `render.js` `FPS` / `WIDTH` / `HEIGHT` | 30 / 1080 / 1920 |
 
 ## Input format
 
