@@ -15,18 +15,18 @@ const WIDTH       = 1080;
 const HEIGHT      = 1920;
 const INITIAL_TILE_WAIT_MS = 3000;
 
-const kmlArg = process.argv[2];
-if (!kmlArg) {
-  console.error('Usage: node render.js <path-to-kml>');
+const inputArg = process.argv[2];
+if (!inputArg) {
+  console.error('Usage: node render.js <path-to-kml-or-tcx>');
   process.exit(1);
 }
-const kmlPath = path.resolve(kmlArg);
-if (!fs.existsSync(kmlPath)) {
-  console.error(`KML not found: ${kmlPath}`);
+const inputPath = path.resolve(inputArg);
+if (!fs.existsSync(inputPath)) {
+  console.error(`Activity file not found: ${inputPath}`);
   process.exit(1);
 }
-const kmlText  = fs.readFileSync(kmlPath, 'utf8');
-const baseName = path.basename(kmlPath, path.extname(kmlPath));
+const activityText = fs.readFileSync(inputPath, 'utf8');
+const baseName = path.basename(inputPath, path.extname(inputPath));
 const outPath  = path.join(__dirname, 'out', `${baseName}.mp4`);
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
@@ -44,7 +44,7 @@ page.on('console',  m => console.log('  [browser]', m.text()));
 page.on('pageerror', e => console.error('  [browser-error]', e.message));
 
 await page.goto(flybyUrl);
-await page.evaluate(text => window.loadKmlText(text), kmlText);
+await page.evaluate(text => window.loadActivityText(text), activityText);
 await page.waitForFunction(() => window.flybyReady === true, { timeout: 30000 });
 
 const DURATION_S = await page.evaluate(() => window.flybyDurationS);

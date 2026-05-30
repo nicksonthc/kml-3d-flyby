@@ -20,33 +20,63 @@
 
   #map { position:absolute; inset:0; background:#000; }
 
-  /* Picker + record button live OUTSIDE the stage so they stay
-     real-sized in the browser, independent of stage scale. */
-  #picker { position:fixed; top:24px; left:24px; z-index:50;
-    background:rgba(0,0,0,0.78); padding:14px 18px; border-radius:10px;
-    backdrop-filter: blur(8px); border:1px solid rgba(255,255,255,0.12); }
-  #picker label { font-size:13px; opacity:0.85; }
-  #picker input { margin-top:8px; color:#fff; }
-  body.playing #picker { display:none; }
+  /* Control panel + record button live OUTSIDE the stage so they stay
+     real-sized in the browser, independent of stage scale. Flat, neutral
+     surfaces — no gradients, no logos. */
+  #panel { position:fixed; top:20px; left:20px; z-index:50; width:264px;
+    background:#0e1014; border:1px solid #23262e; border-radius:16px;
+    padding:20px; color:#e7e9ee; box-shadow:0 12px 40px rgba(0,0,0,0.55); }
+  .panel-title { font-size:12px; font-weight:700; letter-spacing:4px;
+    text-transform:uppercase; color:#fff; margin-bottom:18px; }
 
-  #recordBtn { position:fixed; top:24px; right:24px; z-index:50;
-    display:none; padding:10px 16px; border-radius:999px; border:1px solid rgba(255,255,255,0.18);
-    background:rgba(0,0,0,0.78); backdrop-filter: blur(8px);
-    color:#fff; font: 600 13px/1 -apple-system, "Inter", sans-serif; letter-spacing:1.5px;
-    text-transform:uppercase; cursor:pointer; }
-  #recordBtn:hover { background:rgba(20,20,20,0.85); }
-  #recordBtn.recording { background:rgba(252,76,2,0.92); border-color:rgba(252,76,2,1);
-    box-shadow:0 4px 24px rgba(252,76,2,0.4); }
+  .file-field { display:block; cursor:pointer; margin-bottom:6px; }
+  .file-btn { display:block; text-align:center; padding:12px;
+    border:1px dashed #3a3f4a; border-radius:10px; font-size:13px; font-weight:600;
+    color:#fff; background:#161922; transition:border-color .15s, background .15s; }
+  .file-field:hover .file-btn { border-color:#FC4C02; background:#1a1e28; }
+  .file-name { display:block; margin-top:8px; font-size:11px; color:#7f8694;
+    text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sample-note { margin-bottom:6px; font-size:11px; color:#7f8694; text-align:center; }
+  .sample-note a { color:#FC4C02; text-decoration:none; font-weight:600; }
+  .sample-note a:hover { text-decoration:underline; }
+
+  .field { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }
+  .field label { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9aa0ac; }
+  .field select { appearance:none; -webkit-appearance:none; cursor:pointer;
+    background:#161922; color:#fff; border:1px solid #2a2e38; border-radius:8px;
+    padding:7px 30px 7px 12px; font-size:13px; font-family:inherit;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239aa0ac' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat; background-position:right 10px center; }
+  .field select:hover { border-color:#3a3f4a; }
+  .field select:focus { outline:none; border-color:#FC4C02; }
+  .panel-note { margin-top:18px; font-size:11px; line-height:1.55; color:#6b7280; }
+  .panel-hint { margin:8px 0 2px; font-size:11px; line-height:1.5; color:#7f8694; }
+  .panel-hint summary { cursor:pointer; color:#FC4C02; font-weight:600; list-style:none; }
+  .panel-hint summary::-webkit-details-marker { display:none; }
+  .panel-hint summary::before { content:'▸ '; }
+  .panel-hint[open] summary::before { content:'▾ '; }
+  .panel-hint p { margin:6px 0 0; }
+  .panel-hint a { color:#FC4C02; text-decoration:none; }
+  .panel-hint a:hover { text-decoration:underline; }
+  body.playing #panel { display:none; }
+
+  #recordBtn { position:fixed; top:20px; right:20px; z-index:50;
+    display:none; padding:11px 18px; border-radius:10px; border:1px solid #23262e;
+    background:#0e1014; color:#fff; font:600 12px/1 inherit; letter-spacing:2px;
+    text-transform:uppercase; cursor:pointer; box-shadow:0 12px 40px rgba(0,0,0,0.55);
+    transition:border-color .15s; }
+  #recordBtn:hover { border-color:#3a3f4a; }
+  #recordBtn.recording { background:#FC4C02; border-color:#FC4C02; }
   #recordBtn .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
-    background:#fc4c02; margin-right:8px; vertical-align:middle; }
+    background:#fc4c02; margin-right:9px; vertical-align:middle; }
   #recordBtn.recording .dot { background:#fff; animation:blink 1s infinite; }
   @keyframes blink { 50% { opacity:0.25; } }
   body.has-kml #recordBtn { display:block; }
-  body.recording #picker { display:none; }
-  body.render-mode #picker, body.render-mode #recordBtn, body.render-mode #hint { display:none !important; }
+  body.recording #panel { display:none; }
+  body.render-mode #panel, body.render-mode #recordBtn, body.render-mode #hint { display:none !important; }
 
-  #hint { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:50;
-    font-size:12px; opacity:0.55; letter-spacing:1.5px; text-transform:uppercase;
+  #hint { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:50;
+    font-size:11px; opacity:0.5; letter-spacing:2px; text-transform:uppercase;
     pointer-events:none; }
 
   #overlay { position:absolute; inset:0; pointer-events:none; z-index:10; }
@@ -71,6 +101,17 @@
   .stat-card .row .value { font-size:30px; font-weight:500; margin-top:6px;
     font-variant-numeric: tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.8); }
 
+  /* Live heart rate (TCX only) sits in the stat row beside PACE. The heart
+     pulses at a rate set from the current BPM (see drawFrame). */
+  .stat-card .hr-stat { display:none; }
+  body.has-hr .stat-card .hr-stat { display:block; }
+  .stat-card .hr-stat .value { display:flex; align-items:center; gap:8px; }
+  .stat-card .hr-stat .heart { color:#ff414e; font-size:24px; line-height:1;
+    display:inline-block; transform-origin:center;
+    animation: hrbeat 1s infinite ease-in-out; }
+  @keyframes hrbeat { 0%,100%{transform:scale(1);} 14%{transform:scale(1.22);}
+    28%{transform:scale(1);} }
+
   .lap-chip { position:absolute; bottom:160px; right:60px; padding:16px 28px;
     background:rgba(252,76,2,0.92); border-radius:999px;
     font-weight:700; letter-spacing:3px; font-size:18px; text-transform:uppercase;
@@ -89,6 +130,39 @@
     font-variant-numeric: tabular-nums; }
   .end-card .pace { font-size:18px; margin-top:22px; opacity:0.55;
     letter-spacing:5px; text-transform:uppercase; }
+  .end-card .hr-final { font-size:18px; margin-top:14px; opacity:0.7;
+    letter-spacing:3px; text-transform:uppercase; }
+  .end-card .hr-final .h { color:#ff414e; }
+  .end-card .hr-final:empty { display:none; }
+
+  /* Per-km splits scene (TCX). Opacity + drift are driven per-frame from the
+     timeline (drawSplitsDOM), not CSS transitions, so render.js screenshots
+     and the canvas recorder stay in sync. */
+  .splits-card { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; opacity:0; pointer-events:none;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.88) 100%); }
+  .splits-inner { width:900px; transform-origin:center center; }
+  .splits-title { text-align:center; font-size:22px; font-weight:600;
+    letter-spacing:9px; text-transform:uppercase; opacity:0.5; margin-bottom:46px; }
+  .split-row { display:grid; grid-template-columns:62px 116px 1fr 132px;
+    align-items:center; column-gap:26px; padding:9px 0; opacity:0; }
+  .split-row .sp-idx { font-size:40px; font-weight:200; opacity:0.45;
+    text-align:right; font-variant-numeric:tabular-nums; line-height:1; }
+  .split-row .sp-pace { font-size:34px; font-weight:300;
+    font-variant-numeric:tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.7); }
+  .split-row .sp-bar { height:14px; background:rgba(255,255,255,0.10);
+    border-radius:999px; overflow:hidden; }
+  .split-row .sp-bar-fill { height:100%; width:0%; background:#FC4C02;
+    border-radius:999px; box-shadow:0 0 14px rgba(252,76,2,0.45); }
+  .split-row .sp-hr { display:flex; align-items:center; justify-content:flex-end;
+    gap:9px; font-size:30px; font-weight:300; font-variant-numeric:tabular-nums; }
+  .split-row .sp-hr .sp-heart { color:#ff414e; font-size:24px; }
+  .split-row.fast .sp-idx { opacity:0.9; }
+  .split-row.fast .sp-pace { color:#FC4C02; font-weight:500; }
+  .splits-foot { text-align:center; margin-top:42px; font-size:20px;
+    letter-spacing:3px; text-transform:uppercase; opacity:0; }
+  .splits-foot .h { color:#ff414e; }
   .end-card .center { text-align:center; }
 
   .maplibregl-ctrl-attrib { font-size:10px; opacity:0.4; }
@@ -96,11 +170,55 @@
 </style>
 </head>
 <body>
-<div id="picker">
-  <label>Drop a Garmin KML to start the flyby</label><br>
-  <input type="file" id="kmlInput" accept=".kml">
+<div id="panel">
+  <div class="panel-title">3D&nbsp;Flyby</div>
+  <label class="file-field">
+    <input type="file" id="kmlInput" accept=".kml,.tcx" hidden>
+    <span class="file-btn">Choose a KML or TCX file</span>
+    <span class="file-name" id="fileName">No file selected</span>
+  </label>
+  <div class="sample-note">No file? <a href="#" id="sampleBtn">Try a sample run</a></div>
+  <details class="panel-hint">
+    <summary>How do I export my activity?</summary>
+    <p>Grab a <strong>KML</strong> or <strong>TCX</strong> from your watch's website:</p>
+    <p><strong>Garmin Connect</strong> — open an activity → ⚙ gear icon →
+      <em>Export to Google Earth</em> (KML) or <em>Export to TCX</em>.
+      <a href="https://connect.garmin.com/" target="_blank" rel="noopener">connect.garmin.com</a></p>
+    <p><strong>Strava</strong> — open an activity → ⋯ menu → <em>Export GPX</em>,
+      then convert to KML/TCX (GPX import is on the roadmap).</p>
+    <p><strong>Coros / Polar / Suunto</strong> — export the activity as TCX from
+      the web dashboard.</p>
+  </details>
+  <div class="field">
+    <label for="zoomSel">Zoom</label>
+    <select id="zoomSel">
+      <option value="extreme">Extreme close-up</option>
+      <option value="veryclose">Very close-up</option>
+      <option value="close">Close-up</option>
+      <option value="balanced">Balanced</option>
+      <option value="wide">Wide</option>
+      <option value="birdseye">Bird's-eye</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="speedSel">Speed</label>
+    <select id="speedSel">
+      <option value="slow">Slow</option>
+      <option value="medium">Medium</option>
+      <option value="fast">Fast</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="cameraSel">Camera</label>
+    <select id="cameraSel">
+      <option value="smooth">Smooth follow</option>
+      <option value="cinematic">Cinematic</option>
+      <option value="steady">Steady · north-up</option>
+    </select>
+  </div>
+  <div class="panel-note">TCX files add live heart rate, an effort-coloured route, and per-km splits.</div>
 </div>
-<button id="recordBtn" title="Capture this tab as 1080x1920 MP4"><span class="dot"></span>Record MP4</button>
+<button id="recordBtn" title="Capture this tab as 1080×1920 MP4"><span class="dot"></span>Record MP4</button>
 <div id="hint">1080 × 1920 · vertical</div>
 <div class="stage" id="stage">
   <div id="map"></div>
@@ -113,6 +231,7 @@
       <div class="distance"><span id="distVal">0.00</span><span class="unit">KM</span></div>
       <div class="row">
         <div><div class="label">Pace</div><div class="value" id="paceVal">—:—/km</div></div>
+        <div class="hr-stat"><div class="label">Heart</div><div class="value"><span class="heart">&#10084;</span><span id="hrVal">—</span></div></div>
         <div><div class="label">Elapsed</div><div class="value" id="elapsedVal">0:00</div></div>
       </div>
     </div>
@@ -122,6 +241,14 @@
         <div class="big"><span id="finalDist">0</span><span class="u">KM</span></div>
         <div class="sub">in <span id="finalTime">—</span></div>
         <div class="pace">AVG <span id="finalPace">—:—</span> / KM</div>
+        <div class="hr-final" id="hrFinal"></div>
+      </div>
+    </div>
+    <div class="splits-card" id="splitsCard">
+      <div class="splits-inner" id="splitsInner">
+        <div class="splits-title">KM SPLITS</div>
+        <div class="splits-rows" id="splitsRows"></div>
+        <div class="splits-foot" id="splitsFoot"></div>
       </div>
     </div>
   </div>
@@ -129,6 +256,10 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const ROUTE_COLOR = '#FC4C02';
+// Dark outline drawn under the route line. On out-and-back sections the track
+// runs back alongside itself; the casing keeps a dark gap between the passes
+// so they read as two lines instead of one merged orange blob.
+const ROUTE_CASING_COLOR = '#240a00';
 // Duration scales with distance (Strava-style): longer activities get
 // proportionally longer playback. Recomputed each time a KML loads.
 // Formula: 20s base + 2.5s per km, clamped to [25s, 150s].
@@ -142,22 +273,65 @@ function computeDurationS(km) {
   return Math.max(DURATION_MIN_S,
     Math.min(DURATION_MAX_S, DURATION_BASE_S + km * DURATION_PER_KM_S));
 }
+// These fractions are now relative to the FLYBY portion of the timeline
+// (progress `tf`), not the whole video — TCX activities append an end-card
+// hold + a per-km splits scene after the flyby (see SCENE below).
 const REVEAL_FRACTION = 0.88;
 const END_FRACTION = 0.94;
+
+// End sequence (TCX with splits only): the summary card holds for END_HOLD_S
+// — a beat for the viewer — then the per-km splits scene plays for a length
+// that scales with the number of splits.
+const END_HOLD_S = 2.4;
+const SPLITS_MIN_S = 5;
+const SPLITS_MAX_S = 16;
+const SPLITS_PER_ROW_S = 0.55;
+function computeSplitsS(n) {
+  return Math.max(SPLITS_MIN_S, Math.min(SPLITS_MAX_S, 3 + n * SPLITS_PER_ROW_S));
+}
+// Scene boundaries as fractions of DURATION_S, recomputed on each load.
+// Defaults (no splits) make the whole timeline the flyby — identical to before.
+let SCENE = { flybyEnd: 1, splitsStart: 1 };
+
 const PITCH = 60;
-// Camera zooms in close while flying along the route, then eases out
-// near the end so you can see the full path before the end card.
-const ZOOM_FLY = 17.4;
-const ZOOM_END = 15.2;
-// Where the pull-back starts (as a fraction of total duration).
+// Where the camera pull-back starts (as a fraction of flyby progress).
 const ZOOM_OUT_START = 0.82;
-// Bearing target = direction of a chord spanning BEHIND_M before and AHEAD_M
-// after the current position — averages out sharp local turns.
+// Bearing target = direction of a chord spanning `behind` m before and `ahead` m
+// after the current position (per camera preset) — averages out sharp local turns.
+// These are the fallbacks when a preset doesn't specify its own window.
 const BEHIND_M = 50;
 const AHEAD_M = 150;
-// Camera rotation eases toward target with this time constant (wall seconds).
-// Bigger = slower / less vertigo. ~1.5s = gentle pan, ~0.5s = snappy, ~3s = floaty.
-const BEARING_TIME_CONSTANT_S = 1.5;
+
+// ── User-tweakable playback settings (driven by the control panel) ────
+// Zoom presets: `fly` while tracking, `end` after the pull-back. Lower = wider.
+const ZOOM_PRESETS = {
+  extreme:   { fly: 19.0, end: 16.8 },
+  veryclose: { fly: 18.3, end: 16.2 },
+  close:    { fly: 17.6, end: 15.6 },
+  balanced: { fly: 16.4, end: 14.6 },
+  wide:     { fly: 15.2, end: 13.6 },
+  birdseye: { fly: 14.0, end: 12.6 },
+};
+// Playback speed = multiplier on the distance-scaled flyby duration.
+// >1 is slower, so the distance counts up more gently.
+const SPEED_PRESETS = { slow: 1.7, medium: 1.25, fast: 0.85 };
+// Camera motion (see the bearing logic in drawFrame):
+//   tau      — rotation settle time, seconds (bigger = laggier easing)
+//   fixed    — true keeps the map north-up; no rotation at all
+//   deadband — degrees of heading change to ignore; the camera stays LOCKED
+//              below this, so straight-ish sections don't drift/jitter
+//   maxRate  — max rotation speed in deg/sec; a hairpin becomes a slow, controlled
+//              turn instead of a whip
+//   behind/ahead — look-ahead chord (m); wider = tracks the macro direction
+// "smooth" is the calm-follow default: locked on straights, slow deliberate turns.
+const CAMERA_PRESETS = {
+  smooth:    { tau: 2.0, fixed: false, deadband: 11, maxRate: 22, behind: 25, ahead: 240 },
+  cinematic: { tau: 1.4, fixed: false, deadband: 3,  maxRate: 75, behind: 50, ahead: 150 },
+  steady:    { tau: 1.5, fixed: true  },
+};
+const CFG_DEFAULTS = { zoom: 'balanced', speed: 'medium', camera: 'smooth' };
+const CFG = { ...CFG_DEFAULTS };
+
 const FPS_RENDER = 30;  // must match render.js FPS
 
 const STAGE_W = 1080;
@@ -166,6 +340,15 @@ const STAGE_H = 1920;
 const params = new URLSearchParams(location.search);
 const RENDER_MODE = params.get('render') === '1';
 if (RENDER_MODE) document.body.classList.add('render-mode');
+
+// Allow ?zoom=&speed=&camera= to override the defaults (handy for render.js).
+{
+  const tables = { zoom: ZOOM_PRESETS, speed: SPEED_PRESETS, camera: CAMERA_PRESETS };
+  for (const key of Object.keys(tables)) {
+    const v = params.get(key);
+    if (v && tables[key][v] !== undefined) CFG[key] = v;
+  }
+}
 
 let map = null;
 let routeData = null;
@@ -204,14 +387,6 @@ function bearingDeg(a, b) {
   const y = Math.sin(dLon) * Math.cos(lat2);
   const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-function easeBearing(prev, next, alpha) {
-  if (prev === null || prev === undefined) return next;
-  let d = next - prev;
-  if (d > 180) d -= 360;
-  if (d < -180) d += 360;
-  return (prev + d * alpha + 360) % 360;
 }
 
 function parseKml(text) {
@@ -264,8 +439,123 @@ function parseKml(text) {
     totalSec,
     laps,
     name: folderName,
-    dateText
+    dateText,
+    // KML carries no heart rate or per-point time — no HR readout, no splits.
+    hr: null, hasHr: false, avgHr: null, maxHr: null,
+    splits: []
   };
+}
+
+// Garmin TCX — richer than KML: every <Trackpoint> carries position AND
+// heart rate, so we can show a live BPM readout along the flyby. Returns the
+// same shape as parseKml() plus a per-point `hr` array (parallel to coords).
+function parseTcx(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const tps = Array.from(doc.getElementsByTagName('Trackpoint'));
+
+  const coords = [];
+  const hr = [];
+  let lastHr = null;
+  for (const tp of tps) {
+    const latN = tp.getElementsByTagName('LatitudeDegrees')[0];
+    const lonN = tp.getElementsByTagName('LongitudeDegrees')[0];
+    if (!latN || !lonN) continue;  // paused/indoor points carry no position
+    const lon = parseFloat(lonN.textContent);
+    const lat = parseFloat(latN.textContent);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+
+    const hrN = tp.getElementsByTagName('HeartRateBpm')[0];
+    let bpm = null;
+    if (hrN) {
+      const v = hrN.getElementsByTagName('Value')[0];
+      if (v) bpm = parseInt(v.textContent, 10);
+    }
+    if (bpm == null || !Number.isFinite(bpm)) bpm = lastHr;  // carry forward gaps
+    else lastHr = bpm;
+
+    coords.push([lon, lat]);
+    hr.push(bpm);
+  }
+  if (coords.length < 2) throw new Error('No positioned trackpoints found in TCX');
+
+  // Backfill any leading nulls (HR before the first valid reading).
+  const firstHr = hr.find(v => v != null) ?? null;
+  for (let i = 0; i < hr.length; i++) if (hr[i] == null) hr[i] = firstHr;
+
+  const cumDists = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cumDists.push(cumDists[i-1] + haversineM(coords[i-1], coords[i]));
+  }
+  const totalM = cumDists[cumDists.length - 1];
+
+  // Laps → totals + pace (same downstream contract as the KML laps) and the
+  // per-km splits. Garmin auto-laps every 1 km and records each lap's MOVING
+  // time + avg/max HR — pause-corrected, exactly what Garmin Connect shows
+  // (raw trackpoint timestamps would fold in stopped time and skew the pace).
+  const laps = [];
+  const splits = [];
+  let totalSec = 0, officialM = 0;
+  const lapNum = (n) => {
+    const v = n?.getElementsByTagName('Value')[0]?.textContent;
+    const x = v ? parseInt(v, 10) : NaN;
+    return Number.isFinite(x) ? x : null;
+  };
+  Array.from(doc.getElementsByTagName('Lap')).forEach((lap, i) => {
+    const sec = parseFloat(lap.getElementsByTagName('TotalTimeSeconds')[0]?.textContent ?? '0');
+    const m = parseFloat(lap.getElementsByTagName('DistanceMeters')[0]?.textContent ?? '0');
+    if (Number.isFinite(sec)) totalSec += sec;
+    if (Number.isFinite(m)) officialM += m;
+    if (sec > 0 && m > 0) {
+      const km = m / 1000;
+      laps.push({ name: `Lap ${i+1}`, sec, km });
+      splits.push({
+        idx: splits.length + 1,
+        km, sec,
+        paceSecPerKm: sec / km,
+        avgHr: lapNum(lap.getElementsByTagName('AverageHeartRateBpm')[0]),
+        maxHr: lapNum(lap.getElementsByTagName('MaximumHeartRateBpm')[0]),
+        partial: km < 0.9
+      });
+    }
+  });
+
+  // HR summary for the end card.
+  let hrSum = 0, hrCount = 0, maxHr = 0;
+  for (const v of hr) {
+    if (v == null) continue;
+    hrSum += v; hrCount++;
+    if (v > maxHr) maxHr = v;
+  }
+  const avgHr = hrCount ? Math.round(hrSum / hrCount) : null;
+
+  // Name + date from the Activity (TCX has no friendly title — use the sport).
+  const sport = doc.querySelector('Activity')?.getAttribute('Sport') ?? '';
+  const idText = (doc.querySelector('Activity > Id') ?? doc.querySelector('Id'))
+    ?.textContent?.trim() ?? '';
+  let dateText = '';
+  const d = idText ? new Date(idText) : null;
+  if (d && !isNaN(d.getTime())) {
+    const mon = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getMonth()];
+    dateText = `${d.getDate()} ${mon} ${d.getFullYear()}`;
+  }
+
+  return {
+    coords, cumDists,
+    totalKm: totalM / 1000,
+    officialKm: officialM > 0 ? officialM / 1000 : null,
+    totalSec: totalSec > 0 ? totalSec : null,
+    laps,
+    name: sport ? sport.toUpperCase() : 'ACTIVITY',
+    dateText,
+    hr, hasHr: hrCount > 0, avgHr, maxHr: maxHr || null,
+    splits
+  };
+}
+
+// Sniff the file: TCX has a TrainingCenterDatabase root, everything else
+// falls through to the KML parser.
+function parseActivity(text) {
+  return /<TrainingCenterDatabase[\s>]/.test(text) ? parseTcx(text) : parseKml(text);
 }
 
 function pointAtDist(d) {
@@ -286,6 +576,24 @@ function pointAtDist(d) {
   ];
 }
 
+// Heart rate interpolated at a distance along the route — mirrors
+// pointAtDist() so the BPM tracks the same point the camera reveals.
+function hrAtDist(d) {
+  const { hr, cumDists } = routeData;
+  if (!hr || hr.length === 0) return null;
+  const total = cumDists[cumDists.length - 1];
+  if (d <= 0) return hr[0];
+  if (d >= total) return hr[hr.length - 1];
+  let lo = 0, hi = cumDists.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (cumDists[mid] <= d) lo = mid; else hi = mid;
+  }
+  const segLen = cumDists[hi] - cumDists[lo];
+  const f = segLen === 0 ? 0 : (d - cumDists[lo]) / segLen;
+  return hr[lo] + f * (hr[hi] - hr[lo]);
+}
+
 function fmtTime(sec) {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600);
@@ -304,25 +612,170 @@ function easeInOut(t) {
   t = Math.min(Math.max(t, 0), 1);
   return 0.5 - 0.5 * Math.cos(Math.PI * t);
 }
+// Decelerating ease — elements arrive fast then "land" with weight, the
+// physical settle the splits bars use as they sweep in.
+function easeOutExpo(t) {
+  t = Math.min(Math.max(t, 0), 1);
+  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+}
+function clamp01(x) { return Math.min(Math.max(x, 0), 1); }
 
-function gradientForProgress(p) {
+function gradientForProgress(p, color = ROUTE_COLOR) {
   if (p >= 0.999) {
     return ['interpolate', ['linear'], ['line-progress'],
-      0, ROUTE_COLOR, 1, ROUTE_COLOR];
+      0, color, 1, color];
   }
   const pp = Math.max(0.0001, Math.min(0.99, p));
   return ['interpolate', ['linear'], ['line-progress'],
-    0, ROUTE_COLOR,
-    pp, ROUTE_COLOR,
+    0, color,
+    pp, color,
     Math.min(pp + 0.004, 0.999), 'rgba(0,0,0,0)',
     1, 'rgba(0,0,0,0)'];
+}
+
+// ── Heart-rate route colouring (TCX) ──────────────────────────────────
+// The line is tinted by HR — cool where easy, hot where hard — so out-and-back
+// passes (different effort) read as different colours where they overlap.
+// Perceptual cool→hot ramp; the Strava orange sits at the 0.75 mark.
+const HR_RAMP = [
+  [0.00, [ 38, 150, 255]],  // blue   · easy
+  [0.28, [ 38, 210, 130]],  // green
+  [0.52, [242, 194,   0]],  // amber
+  [0.76, [252,  76,   2]],  // orange · ROUTE_COLOR
+  [1.00, [225,  20,  44]],  // red    · max effort
+];
+function hrColormap(norm) {
+  norm = clamp01(norm);
+  let a = HR_RAMP[0], b = HR_RAMP[HR_RAMP.length - 1];
+  for (let i = 0; i < HR_RAMP.length - 1; i++) {
+    if (norm >= HR_RAMP[i][0] && norm <= HR_RAMP[i + 1][0]) { a = HR_RAMP[i]; b = HR_RAMP[i + 1]; break; }
+  }
+  const t = (b[0] === a[0]) ? 0 : (norm - a[0]) / (b[0] - a[0]);
+  const c = a[1].map((v, k) => Math.round(v + (b[1][k] - v) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+// Precomputed once per load: HR colour sampled at evenly spaced progresses.
+let routeColorStops = null;     // [{ p, color }] or null when no HR
+let hrLo = 0, hrSpan = 1;       // normalisation range for colorAtP()
+function prepRouteColor() {
+  routeColorStops = null;
+  if (!routeData.hasHr || !routeData.hr) return;
+  const hrs = routeData.hr.filter(v => v != null);
+  if (hrs.length === 0) return;
+  hrLo = Math.min(...hrs);
+  const hi = Math.max(...hrs);
+  hrSpan = (hi > hrLo) ? (hi - hrLo) : 1;
+  const totalM = routeData.cumDists[routeData.cumDists.length - 1];
+  const M = 48;
+  routeColorStops = [];
+  for (let k = 0; k <= M; k++) {
+    const p = k / M;
+    routeColorStops.push({ p, color: colorAtP(p, totalM) });
+  }
+}
+function colorAtP(p, totalM) {
+  const bpm = hrAtDist(p * (totalM ?? routeData.cumDists[routeData.cumDists.length - 1]));
+  return hrColormap((bpm - hrLo) / hrSpan);
+}
+
+// Same progressive reveal as gradientForProgress, but the revealed part is
+// tinted by HR instead of a flat colour.
+function hrRevealGradient(revealT) {
+  const out = ['interpolate', ['linear'], ['line-progress']];
+  if (revealT >= 0.999) {
+    for (const s of routeColorStops) out.push(s.p, s.color);
+    return out;
+  }
+  const cp = Math.max(0.0001, Math.min(0.99, revealT));
+  for (const s of routeColorStops) if (s.p < cp) out.push(s.p, s.color);
+  out.push(cp, colorAtP(cp));
+  out.push(Math.min(cp + 0.004, 0.999), 'rgba(0,0,0,0)');
+  out.push(1, 'rgba(0,0,0,0)');
+  return out;
+}
+
+// Splits scene shared state, set by prepSplits() and read by both render paths.
+let splitsScale = 1;        // uniform scale to fit the rows in the stage height
+let fastestSplitIdx = -1;   // the highlighted "120% detail" row
+
+// Build the splits DOM once per load and precompute each bar's length (encodes
+// speed: fastest km = full bar, slowest = 0.32) + the fastest-km highlight.
+function prepSplits() {
+  const rowsEl = document.getElementById('splitsRows');
+  const footEl = document.getElementById('splitsFoot');
+  rowsEl.innerHTML = '';
+  footEl.innerHTML = '';
+  fastestSplitIdx = -1;
+  splitsScale = 1;
+  const splits = routeData.splits || [];
+  if (splits.length < 2) return;
+
+  const speeds = splits.map(s => 1 / s.paceSecPerKm);
+  const sMin = Math.min(...speeds), sMax = Math.max(...speeds);
+  let fastest = 0;
+  splits.forEach((s, i) => {
+    s._frac = (sMax === sMin) ? 1 : 0.32 + 0.68 * (speeds[i] - sMin) / (sMax - sMin);
+    if (speeds[i] > speeds[fastest]) fastest = i;
+  });
+  fastestSplitIdx = fastest;
+
+  splits.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'split-row' + (i === fastest ? ' fast' : '');
+    const hr = s.avgHr != null
+      ? `<span class="sp-heart">&#10084;</span><span>${s.avgHr}</span>` : '';
+    row.innerHTML =
+      `<div class="sp-idx">${s.idx}</div>` +
+      `<div class="sp-pace">${fmtPace(s.paceSecPerKm)}</div>` +
+      `<div class="sp-bar"><div class="sp-bar-fill"></div></div>` +
+      `<div class="sp-hr">${hr}</div>`;
+    rowsEl.appendChild(row);
+  });
+
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const avgPace = (routeData.totalSec && km) ? fmtPace(routeData.totalSec / km) : '—:—';
+  footEl.innerHTML = `AVG ${avgPace} / KM` + (routeData.hasHr
+    ? `&nbsp;&nbsp;·&nbsp;&nbsp;<span class="h">&#10084;</span> ${routeData.avgHr} AVG · ${routeData.maxHr} MAX` : '');
+
+  // Scale the block down for long activities so all rows fit the stage height.
+  const naturalH = 30 + 46 + splits.length * 72 + 42 + 40;
+  splitsScale = Math.min(1, (STAGE_H - 2 * 140) / naturalH);
+}
+
+// Per-frame splits update. `sp` is 0..1 progress through the splits scene.
+function drawSplitsDOM(sp) {
+  const splits = routeData.splits || [];
+  const n = splits.length;
+  const appear = clamp01(sp / 0.10);
+  const card = document.getElementById('splitsCard');
+  card.style.opacity = String(appear);
+  const drift = (1 - appear) * 34;  // rises into place — continuous with the summary
+  document.getElementById('splitsInner').style.transform =
+    `translateY(${drift.toFixed(1)}px) scale(${splitsScale.toFixed(4)})`;
+
+  const rows = document.getElementById('splitsRows').children;
+  for (let i = 0; i < n; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const start = 0.08 + (i / n) * 0.42;       // staggered reveal
+    const rp = easeOutExpo(clamp01((sp - start) / 0.18));
+    row.style.opacity = String(rp);
+    const fill = row.querySelector('.sp-bar-fill');
+    if (fill) fill.style.width = (splits[i]._frac * rp * 100).toFixed(1) + '%';
+  }
+  document.getElementById('splitsFoot').style.opacity = clamp01((sp - 0.58) / 0.14).toFixed(3);
 }
 
 function drawFrame(t) {
   document.getElementById('overlay').classList.remove('hidden');
   lastDrawT = t;
 
-  const revealT = easeInOut(Math.min(t / REVEAL_FRACTION, 1));
+  // tf = progress within the FLYBY portion (the end-card hold + splits scene
+  // are appended after it for TCX). Without splits, SCENE.flybyEnd === 1 → tf === t.
+  const tf = SCENE.flybyEnd >= 1 ? t : Math.min(t / SCENE.flybyEnd, 1);
+
+  const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
   const totalM = routeData.cumDists[routeData.cumDists.length-1];
   const currentM = revealT * totalM;
   const currentKm = currentM / 1000;
@@ -337,44 +790,75 @@ function drawFrame(t) {
     dt = (lastFrameWallMs === null) ? (1/60) : Math.min((now - lastFrameWallMs) / 1000, 1/15);
     lastFrameWallMs = now;
   }
-  const bearingAlpha = 1 - Math.exp(-dt / BEARING_TIME_CONSTANT_S);
+  const cam = CAMERA_PRESETS[CFG.camera] || CAMERA_PRESETS.smooth;
 
-  // Camera position = current point on route.
-  // Camera bearing = direction of a chord around the current point, then eased
-  // toward that target with BEARING_TIME_CONSTANT_S settle time.
+  // Camera position = current point on route. Bearing follows the heading of a
+  // look-ahead chord, but with two constraints that stop the constant spinning:
+  //   • dead-band — ignore heading changes below cam.deadband° (lock on straights)
+  //   • rate clamp — never rotate faster than cam.maxRate °/s (no whipping)
+  // "steady" skips all of this and stays north-up.
   const pos = pointAtDist(currentM);
-  const back = pointAtDist(Math.max(currentM - BEHIND_M, 0));
-  const ahead = pointAtDist(Math.min(currentM + AHEAD_M, totalM));
   let bearing;
-  if (ahead[0] === back[0] && ahead[1] === back[1]) {
-    bearing = lastBearing ?? 0;
+  if (cam.fixed) {
+    bearing = 0;
   } else {
-    const rawBearing = bearingDeg(back, ahead);
-    bearing = easeBearing(lastBearing, rawBearing, bearingAlpha);
+    const back = pointAtDist(Math.max(currentM - (cam.behind ?? BEHIND_M), 0));
+    const ahead = pointAtDist(Math.min(currentM + (cam.ahead ?? AHEAD_M), totalM));
+    if (ahead[0] === back[0] && ahead[1] === back[1]) {
+      bearing = lastBearing ?? 0;
+    } else if (lastBearing === null) {
+      bearing = bearingDeg(back, ahead);   // first frame snaps to heading
+    } else {
+      const rawBearing = bearingDeg(back, ahead);
+      // signed shortest angle from current to target, in (-180, 180]
+      const err = ((rawBearing - lastBearing + 540) % 360) - 180;
+      if (Math.abs(err) <= (cam.deadband ?? 0)) {
+        bearing = lastBearing;                       // within dead-band → hold
+      } else {
+        const alpha = 1 - Math.exp(-dt / cam.tau);   // eased step toward target
+        let step = err * alpha;
+        const maxStep = (cam.maxRate ?? 1e9) * dt;    // clamp angular speed
+        if (step > maxStep) step = maxStep;
+        else if (step < -maxStep) step = -maxStep;
+        bearing = (lastBearing + step + 360) % 360;
+      }
+    }
   }
   lastBearing = bearing;
 
-  // Hold ZOOM_FLY until ZOOM_OUT_START, then ease toward ZOOM_END so the
-  // viewer gets context on the full route before the end card fades in.
+  // Hold the close zoom until ZOOM_OUT_START, then ease out to the wide zoom so
+  // the viewer gets context on the full route before the end card fades in.
+  const z = ZOOM_PRESETS[CFG.zoom] || ZOOM_PRESETS.balanced;
   let zoom;
-  if (t <= ZOOM_OUT_START) {
-    zoom = ZOOM_FLY;
+  if (tf <= ZOOM_OUT_START) {
+    zoom = z.fly;
   } else {
-    const zt = easeInOut((t - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
-    zoom = ZOOM_FLY + (ZOOM_END - ZOOM_FLY) * zt;
+    const zt = easeInOut((tf - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
+    zoom = z.fly + (z.end - z.fly) * zt;
   }
 
   map.jumpTo({ center: pos, bearing, pitch: PITCH, zoom });
 
-  // Route reveal
-  const grad = gradientForProgress(revealT);
+  // Route reveal — tinted by HR (TCX) or flat orange (KML).
+  const grad = routeColorStops ? hrRevealGradient(revealT) : gradientForProgress(revealT);
   if (map.getLayer('route-line')) map.setPaintProperty('route-line', 'line-gradient', grad);
   if (map.getLayer('route-glow')) map.setPaintProperty('route-glow', 'line-gradient', grad);
+  if (map.getLayer('route-casing'))
+    map.setPaintProperty('route-casing', 'line-gradient',
+      gradientForProgress(revealT, ROUTE_CASING_COLOR));
 
   // Distance counter
   document.getElementById('distVal').textContent = currentKm.toFixed(2);
   document.getElementById('locName').textContent = routeData.name;
   document.getElementById('dateText').textContent = routeData.dateText;
+
+  // Live heart rate — value tracks the revealed point, heart pulses at that rate.
+  if (routeData.hasHr) {
+    const bpm = Math.round(hrAtDist(currentM));
+    document.getElementById('hrVal').textContent = bpm;
+    const heart = document.querySelector('.stat-card .hr-stat .heart');
+    if (heart) heart.style.animationDuration = (60 / Math.max(bpm, 40)).toFixed(2) + 's';
+  }
 
   // Pace + elapsed from laps
   let elapsedSec = 0;
@@ -412,20 +896,42 @@ function drawFrame(t) {
     chip.style.display = 'none';
   }
 
-  // End card
+  // ── End sequence (live HUD → summary card → splits) ─────────────────
+  // Every opacity here is driven from the timeline (no CSS transitions) so the
+  // render.js screenshot path is deterministic regardless of render speed.
+  const rise = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));   // summary fades in
+  const inSplits = SCENE.splitsStart < 1 && t >= SCENE.splitsStart;
+  const sp = inSplits ? clamp01((t - SCENE.splitsStart) / (1 - SCENE.splitsStart)) : 0;
+  const summaryOpacity = inSplits ? clamp01(1 - sp / 0.10) : rise;
+  const liveFade = inSplits ? 0 : (1 - rise);                       // live HUD fades out
+
+  document.body.classList.toggle('ending', rise > 0);
+
+  // Live stat card + lap chip fade out as the summary rises.
+  const statCard = document.querySelector('.stat-card');
+  if (statCard) { statCard.style.transition = 'none'; statCard.style.opacity = String(liveFade); }
+  chip.style.transition = 'none';
+  chip.style.opacity = String(liveFade);
+
+  // Summary end card.
   const endCard = document.getElementById('endCard');
-  if (t >= END_FRACTION) {
-    endCard.classList.add('shown');
-    document.body.classList.add('ending');
+  if (summaryOpacity > 0) {
     document.getElementById('finalDist').textContent = (routeData.officialKm ?? routeData.totalKm).toFixed(2);
     document.getElementById('finalTime').textContent = routeData.totalSec ? fmtTime(routeData.totalSec) : '—';
     const km = routeData.officialKm ?? routeData.totalKm;
     const avg = (routeData.totalSec && km) ? routeData.totalSec / km : 0;
     document.getElementById('finalPace').textContent = fmtPace(avg);
-  } else {
-    endCard.classList.remove('shown');
-    document.body.classList.remove('ending');
+    document.getElementById('hrFinal').innerHTML = routeData.hasHr
+      ? `<span class="h">&#10084;</span> AVG ${routeData.avgHr} · MAX ${routeData.maxHr} BPM` : '';
   }
+  endCard.classList.toggle('shown', summaryOpacity > 0.001);
+  endCard.style.transition = 'none';
+  endCard.style.opacity = String(summaryOpacity);
+
+  // Splits scene (cross-fades up out of the summary — continuous, not a cut).
+  const splitsCard = document.getElementById('splitsCard');
+  if (inSplits) drawSplitsDOM(sp);
+  else if (splitsCard) splitsCard.style.opacity = '0';
 }
 
 async function waitMapIdle() {
@@ -462,7 +968,7 @@ function initMap(routeCoords) {
         { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-fade-duration': 0 } }
       ]
     },
-    center, zoom: ZOOM_FLY, pitch: PITCH, bearing: 0,
+    center, zoom: (ZOOM_PRESETS[CFG.zoom] || ZOOM_PRESETS.balanced).fly, pitch: PITCH, bearing: 0,
     interactive: false, fadeDuration: 0, attributionControl: { compact: true },
     preserveDrawingBuffer: true
   });
@@ -489,10 +995,16 @@ function initMap(routeCoords) {
         paint: { 'line-color': ROUTE_COLOR, 'line-width': 22,
           'line-opacity': 0.55, 'line-blur': 16 }
       });
+      // Dark casing under the line — separates overlapping (out-and-back) passes.
+      map.addLayer({
+        id: 'route-casing', type: 'line', source: 'route',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_CASING_COLOR, 'line-width': 13, 'line-opacity': 1 }
+      });
       map.addLayer({
         id: 'route-line', type: 'line', source: 'route',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ROUTE_COLOR, 'line-width': 5, 'line-opacity': 1 }
+        paint: { 'line-color': ROUTE_COLOR, 'line-width': 6.5, 'line-opacity': 1 }
       });
       drawFrame(0);
       resolve();
@@ -522,13 +1034,36 @@ function playOnce() {
   });
 }
 
-async function startWithKmlText(text) {
-  routeData = parseKml(text);
-  DURATION_S = computeDurationS(routeData.officialKm ?? routeData.totalKm);
+// Timeline = flyby + (for TCX with splits) an end-card hold + a splits scene.
+// Flyby length scales with distance, then by the chosen speed multiplier.
+// Factored out so the Speed control can re-derive it without a reload.
+function applyTiming() {
+  if (!routeData) return;
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const mult = SPEED_PRESETS[CFG.speed] ?? 1;
+  const flybyS = computeDurationS(km) * mult;
+  const hasSplits = (routeData.splits?.length ?? 0) >= 2;
+  const splitsS = hasSplits ? computeSplitsS(routeData.splits.length) : 0;
+  const endHoldS = hasSplits ? END_HOLD_S : 0;
+  DURATION_S = flybyS + endHoldS + splitsS;
+  SCENE = {
+    flybyEnd: flybyS / DURATION_S,
+    splitsStart: hasSplits ? (flybyS + endHoldS) / DURATION_S : 1
+  };
   window.flybyDurationS = DURATION_S;  // render.js reads this to size the frame count
+}
+
+async function startWithActivityText(text) {
+  routeData = parseActivity(text);
+  applyTiming();
+
   lastBearing = null;
   lastFrameWallMs = null;
   document.body.classList.remove('ending');
+  document.body.classList.toggle('has-hr', !!routeData.hasHr);
+  prepSplits();
+  prepRouteColor();
+  document.getElementById('splitsCard').style.opacity = '0';
   await initMap(routeData.coords);
   document.body.classList.add('playing');
   document.body.classList.add('has-kml');
@@ -541,13 +1076,60 @@ async function startWithKmlText(text) {
   await playOnce();
 }
 
-window.loadKmlText = startWithKmlText;
+// render.js drives these; loadKmlText kept as an alias for back-compat.
+window.loadActivityText = startWithActivityText;
+window.loadKmlText = startWithActivityText;
+
+// ── Control panel wiring ──────────────────────────────────────────
+const zoomSel = document.getElementById('zoomSel');
+const speedSel = document.getElementById('speedSel');
+const cameraSel = document.getElementById('cameraSel');
+zoomSel.value = CFG.zoom;
+speedSel.value = CFG.speed;
+cameraSel.value = CFG.camera;
+
+// Zoom + camera are read live in drawFrame, so they update the running flyby.
+zoomSel.addEventListener('change', () => { CFG.zoom = zoomSel.value; });
+cameraSel.addEventListener('change', () => { CFG.camera = cameraSel.value; });
+// Speed changes the timeline length — re-derive it (takes effect on next play).
+speedSel.addEventListener('change', () => { CFG.speed = speedSel.value; applyTiming(); });
 
 document.getElementById('kmlInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  document.getElementById('fileName').textContent = file.name;
   const text = await file.text();
-  startWithKmlText(text);
+  startWithActivityText(text);
+});
+
+// Sample run — load the bundled TCX so users without an export can try it.
+// Loaded via a <script> tag (not fetch) so it works over file:// too, where
+// the browser blocks fetch() of local files. sample-tcx.js sets SAMPLE_TCX.
+function loadSampleScript() {
+  return new Promise((resolve, reject) => {
+    if (window.SAMPLE_TCX) return resolve(window.SAMPLE_TCX);
+    const s = document.createElement('script');
+    s.src = 'sample-tcx.js';
+    s.onload = () => window.SAMPLE_TCX
+      ? resolve(window.SAMPLE_TCX)
+      : reject(new Error('sample data missing'));
+    s.onerror = () => reject(new Error('could not load sample-tcx.js'));
+    document.head.appendChild(s);
+  });
+}
+document.getElementById('sampleBtn').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const link = e.currentTarget;
+  link.textContent = 'Loading sample…';
+  try {
+    const text = await loadSampleScript();
+    document.getElementById('fileName').textContent = 'Sample run (8K)';
+    startWithActivityText(text);
+  } catch (err) {
+    alert('Could not load the sample file: ' + err.message);
+  } finally {
+    link.textContent = 'Try a sample run';
+  }
 });
 
 // ── In-browser MP4 recording ──────────────────────────────────────
@@ -566,6 +1148,19 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Heart glyph as a vector path so the canvas HUD (MP4) matches the DOM ♥.
+// (cx, cy) is the top-center notch; `s` is the overall width/height.
+function heartPath(ctx, cx, cy, s) {
+  ctx.beginPath();
+  const t = cy;            // top of the lobes
+  ctx.moveTo(cx, t + s * 0.30);
+  ctx.bezierCurveTo(cx, t + s * 0.10, cx - s * 0.50, t - s * 0.10, cx - s * 0.50, t + s * 0.25);
+  ctx.bezierCurveTo(cx - s * 0.50, t + s * 0.55, cx - s * 0.18, t + s * 0.78, cx, t + s * 1.0);
+  ctx.bezierCurveTo(cx + s * 0.18, t + s * 0.78, cx + s * 0.50, t + s * 0.55, cx + s * 0.50, t + s * 0.25);
+  ctx.bezierCurveTo(cx + s * 0.50, t - s * 0.10, cx, t + s * 0.10, cx, t + s * 0.30);
+  ctx.closePath();
+}
+
 function setLetterSpacing(ctx, px) {
   // Canvas 2D letterSpacing — Chrome 99+, Safari 16.4+. Silently
   // ignored on older browsers; layout drifts slightly but doesn't break.
@@ -577,10 +1172,12 @@ const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue"
 function drawHUD(ctx, t) {
   const W = STAGE_W, H = STAGE_H;
 
-  // Re-derive the same numbers drawFrame() shows.
-  const revealT = easeInOut(Math.min(t / REVEAL_FRACTION, 1));
+  // Re-derive the same numbers drawFrame() shows (tf = flyby-local progress).
+  const tf = SCENE.flybyEnd >= 1 ? t : Math.min(t / SCENE.flybyEnd, 1);
+  const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
   const totalM = routeData.cumDists[routeData.cumDists.length - 1];
-  const currentKm = (revealT * totalM) / 1000;
+  const currentM = revealT * totalM;
+  const currentKm = currentM / 1000;
 
   let elapsedSec = 0, paceSecPerKm = 0;
   if (routeData.laps.length > 0) {
@@ -598,8 +1195,14 @@ function drawHUD(ctx, t) {
     paceSecPerKm = routeData.totalSec / routeData.totalKm;
   }
 
-  const isEnding = t >= END_FRACTION;
-  const fadeOut = isEnding ? 0 : 1;
+  const isEnding = tf >= END_FRACTION;
+  // Live HUD fades out over the same window the summary fades in (matches the DOM).
+  const fadeOut = 1 - clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+
+  // Splits scene cross-fade (see drawFrame): summary fades out as splits arrive.
+  const inSplits = t >= SCENE.splitsStart && SCENE.splitsStart < 1;
+  const sp = inSplits ? clamp01((t - SCENE.splitsStart) / (1 - SCENE.splitsStart)) : 0;
+  const summaryAlpha = inSplits ? clamp01(1 - sp / 0.10) : 1;
 
   ctx.save();
   ctx.fillStyle = '#fff';
@@ -622,7 +1225,7 @@ function drawHUD(ctx, t) {
   ctx.fillText(routeData.dateText || '', W - 60, 96);
   ctx.restore();
 
-  // Stat card + lap chip fade out near the end (matches CSS .ending behaviour).
+  // Stat card + lap chip + HR card fade out near the end (matches .ending).
   if (fadeOut > 0) {
     ctx.save();
     ctx.globalAlpha = fadeOut;
@@ -645,17 +1248,32 @@ function drawHUD(ctx, t) {
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 2;
 
+    // Columns: PACE · (HEART) · ELAPSED — HEART only present for TCX.
+    const xPace = STAT_LEFT;
+    const xHeart = STAT_LEFT + 200;
+    const xElapsed = STAT_LEFT + (routeData.hasHr ? 400 : 220);
+
     ctx.globalAlpha = 0.6 * fadeOut;
     ctx.font = `400 14px ${FONT_STACK}`;
     setLetterSpacing(ctx, 3);
-    ctx.fillText('PACE', STAT_LEFT, labelY);
-    ctx.fillText('ELAPSED', STAT_LEFT + 220, labelY);
+    ctx.fillText('PACE', xPace, labelY);
+    if (routeData.hasHr) ctx.fillText('HEART', xHeart, labelY);
+    ctx.fillText('ELAPSED', xElapsed, labelY);
 
     ctx.globalAlpha = fadeOut;
     ctx.font = `500 30px ${FONT_STACK}`;
     setLetterSpacing(ctx, 0);
-    ctx.fillText(`${fmtPace(paceSecPerKm)}/km`, STAT_LEFT, valueY);
-    ctx.fillText(fmtTime(elapsedSec), STAT_LEFT + 220, valueY);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${fmtPace(paceSecPerKm)}/km`, xPace, valueY);
+    if (routeData.hasHr) {
+      const hHeartS = 22;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, xHeart + hHeartS / 2, valueY + 4, hHeartS);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(Math.round(hrAtDist(currentM))), xHeart + hHeartS + 8, valueY);
+    }
+    ctx.fillText(fmtTime(elapsedSec), xElapsed, valueY);
 
     // Distance number
     ctx.shadowColor = 'rgba(0,0,0,0.95)';
@@ -704,8 +1322,10 @@ function drawHUD(ctx, t) {
     ctx.restore();
   }
 
-  // End card
-  if (isEnding) {
+  // End card (summary stats) — alpha scaled so it cross-fades into the splits.
+  if (isEnding && summaryAlpha > 0.01) {
+    const a = summaryAlpha;
+    ctx.globalAlpha = a;
     const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.75);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(0.35, 'rgba(0,0,0,0)');
@@ -742,24 +1362,167 @@ function drawHUD(ctx, t) {
 
     ctx.font = `400 44px ${FONT_STACK}`;
     setLetterSpacing(ctx, 0);
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.55 * a;
     ctx.fillText(' KM', startX + bigW, bigBaselineY);
-    ctx.globalAlpha = 1;
 
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 2;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.globalAlpha = 0.88;
+    ctx.globalAlpha = 0.88 * a;
     ctx.font = `400 32px ${FONT_STACK}`;
     setLetterSpacing(ctx, 0);
     ctx.fillText(`in ${finalTime}`, W / 2, bigBaselineY + 30);
 
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.55 * a;
     ctx.font = `400 18px ${FONT_STACK}`;
     setLetterSpacing(ctx, 4);
     ctx.fillText(`AVG ${avgPace} / KM`, W / 2, bigBaselineY + 80);
+
+    // Heart-rate summary (TCX only) — red heart + avg/max BPM.
+    if (routeData.hasHr) {
+      ctx.font = `400 18px ${FONT_STACK}`;
+      setLetterSpacing(ctx, 3);
+      const hrText = `AVG ${routeData.avgHr}  ·  MAX ${routeData.maxHr} BPM`;
+      const hrTextW = ctx.measureText(hrText).width;
+      const heartS = 22;
+      const gap = 14;
+      const blockW = heartS + gap + hrTextW;
+      const hrX = W / 2 - blockW / 2;
+      const hrY = bigBaselineY + 116;
+
+      ctx.globalAlpha = 0.7 * a;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, hrX + heartS / 2, hrY - heartS, heartS);
+      ctx.fill();
+
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
+      ctx.fillText(hrText, hrX + heartS + gap, hrY);
+      ctx.textAlign = 'center';
+    }
   }
+
+  // Splits scene — drawn last so its backdrop sits above the fading summary.
+  if (inSplits) drawSplitsCanvas(ctx, sp);
+
+  ctx.restore();
+}
+
+// Canvas mirror of the DOM splits scene (used by the in-browser MP4 recorder).
+// Geometry tracks the CSS: 900px content centred, scaled by splitsScale.
+function drawSplitsCanvas(ctx, sp) {
+  const splits = routeData.splits || [];
+  const n = splits.length;
+  const alpha = clamp01(sp / 0.10);
+  if (n < 2 || alpha <= 0) return;
+
+  const W = STAGE_W, H = STAGE_H, s = splitsScale, cx = W / 2;
+  const drift = (1 - alpha) * 34;
+
+  ctx.save();
+
+  // Backdrop darkening (fades in with the scene).
+  ctx.globalAlpha = alpha;
+  const bg = ctx.createRadialGradient(cx, H/2, 0, cx, H/2, Math.max(W, H) * 0.7);
+  bg.addColorStop(0, 'rgba(0,0,0,0.58)');
+  bg.addColorStop(1, 'rgba(0,0,0,0.88)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // map an unscaled x (content 90..990, centre 540) to a centre-scaled pixel x
+  const sx = v => cx + (v - 540) * s;
+  const idxR = sx(152), paceL = sx(178), barL = sx(320), barR = sx(832), hrR = sx(990);
+  const barMaxW = barR - barL, barH = 14 * s;
+
+  const rowH = 72 * s, titleH = 30 * s, titleGap = 46 * s, footGap = 42 * s, footH = 40 * s;
+  const blockH = titleH + titleGap + n * rowH + footGap + footH;
+  let y = (H - blockH) / 2 + drift;
+
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 8 * s;
+  ctx.shadowOffsetY = 2 * s;
+
+  // Title
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.font = `600 ${22*s}px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 9 * s);
+  ctx.fillText('KM SPLITS', cx, y);
+  setLetterSpacing(ctx, 0);
+  y += titleH + titleGap;
+
+  // Rows
+  for (let i = 0; i < n; i++) {
+    const start = 0.08 + (i / n) * 0.42;
+    const rp = easeOutExpo(clamp01((sp - start) / 0.18));
+    const cyRow = y + rowH / 2;
+    const isFast = i === fastestSplitIdx;
+    y += rowH;
+    if (rp <= 0) continue;
+    const rowA = alpha * rp;
+
+    // bar track + fill
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.globalAlpha = rowA * 0.12;
+    ctx.fillStyle = '#fff';
+    roundRect(ctx, barL, cyRow - barH/2, barMaxW, barH, barH/2); ctx.fill();
+    const fw = barMaxW * splits[i]._frac * rp;
+    if (fw > 0.5) {
+      ctx.globalAlpha = rowA;
+      ctx.fillStyle = ROUTE_COLOR;
+      roundRect(ctx, barL, cyRow - barH/2, fw, barH, barH/2); ctx.fill();
+    }
+
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 8 * s; ctx.shadowOffsetY = 2 * s;
+    ctx.textBaseline = 'middle';
+
+    // index
+    ctx.globalAlpha = rowA * (isFast ? 0.9 : 0.45);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'right';
+    ctx.font = `200 ${40*s}px ${FONT_STACK}`;
+    ctx.fillText(String(splits[i].idx), idxR, cyRow);
+
+    // pace
+    ctx.globalAlpha = rowA;
+    ctx.fillStyle = isFast ? ROUTE_COLOR : '#fff';
+    ctx.textAlign = 'left';
+    ctx.font = `${isFast ? 500 : 300} ${34*s}px ${FONT_STACK}`;
+    ctx.fillText(fmtPace(splits[i].paceSecPerKm), paceL, cyRow);
+
+    // heart rate (heart + bpm, right-aligned)
+    if (splits[i].avgHr != null) {
+      ctx.globalAlpha = rowA;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'right';
+      ctx.font = `300 ${30*s}px ${FONT_STACK}`;
+      const bpm = String(splits[i].avgHr);
+      ctx.fillText(bpm, hrR, cyRow);
+      const bw = ctx.measureText(bpm).width;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, hrR - bw - 20 * s, cyRow - 11 * s, 22 * s);
+      ctx.fill();
+    }
+  }
+
+  // Footer
+  y += footGap;
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 8 * s; ctx.shadowOffsetY = 2 * s;
+  ctx.globalAlpha = alpha * clamp01((sp - 0.58) / 0.14);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = `400 ${20*s}px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 3 * s);
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const avgPace = (routeData.totalSec && km) ? fmtPace(routeData.totalSec / km) : '—:—';
+  let foot = `AVG ${avgPace} / KM`;
+  if (routeData.hasHr) foot += `    ·    ${routeData.avgHr} AVG · ${routeData.maxHr} MAX`;
+  ctx.fillText(foot, cx, y);
+  setLetterSpacing(ctx, 0);
 
   ctx.restore();
 }
@@ -780,7 +1543,7 @@ function pickMime() {
 }
 
 async function recordFlyby() {
-  if (!routeData) { alert('Load a KML first.'); return; }
+  if (!routeData) { alert('Load a KML or TCX first.'); return; }
   if (!window.MediaRecorder) { alert('Your browser does not support MediaRecorder.'); return; }
 
   const btn = document.getElementById('recordBtn');
