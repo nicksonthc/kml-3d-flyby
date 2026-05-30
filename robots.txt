@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nicksonthc.github.io/kml-3d-flyby/sitemap.xml

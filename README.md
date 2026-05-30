@@ -4,7 +4,9 @@
 
 ![5-second teaser of the cinematic flyby](docs/demo.gif)
 
-![End card with final distance, time, and average pace](docs/demo-end.png)
+![Final distance, time, and average pace](docs/demo-end.png)
+
+![Split and Pace](docs/demo-pace.png)
 
 MapLibre GL (no API key) + Playwright + ffmpeg. Satellite tiles, banking
 camera, Strava-orange glow, distance / pace / elapsed overlays, end card.
