@@ -11,6 +11,11 @@
 MapLibre GL (no API key) + Playwright + ffmpeg. Satellite tiles, banking
 camera, Strava-orange glow, distance / pace / elapsed overlays, end card.
 
+**New: a first-person low-poly 3D world** — `world.html` replays the same
+route as a 3D run through a stylised world built live from OpenStreetMap
+(cartoon roads, low-poly buildings and trees), with a 3D runner and four
+camera modes. See [Runner World (3D)](#runner-world-3d).
+
 ## Quickstart
 
 ```sh
@@ -111,6 +116,56 @@ The in-app **How do I export my activity?** hint mirrors these steps.
 - `?render=1` swaps wall-clock animation for deterministic
   `window.renderFrame(t)` calls driven by Playwright; ffmpeg encodes the
   PNG stream into MP4.
+
+## Runner World (3D)
+
+`world.html` is a second view that turns the same KML/TCX into a **first-person
+run through a low-poly 3D world** — no satellite imagery. It's built entirely
+with [Three.js](https://threejs.org/) (loaded from a CDN via an import map, no
+build step) and pulls the surrounding map data live from the free
+[Overpass API](https://overpass-api.de/) (OpenStreetMap) — no API key.
+
+```sh
+open world.html            # live in a browser
+node render.js tcx/activity_22906933937.tcx page=world camera=firstperson
+```
+
+What it does:
+
+- Projects the route into a local-meter frame and fetches OSM data for a
+  ~250 m corridor around it (one Overpass query over a chain of padded bboxes,
+  `out geom` so coordinates arrive inline). Results are cached in
+  `localStorage` for 7 days, so re-runs of the same route are instant.
+- Builds the world from that data: **cartoon roads** (ribbon meshes, width by
+  highway class), **low-poly extruded buildings** (height from OSM tags, pastel
+  palette, merged into 300 m chunks for culling), **water/park polygons**, and
+  **trees** (OSM `natural=tree` nodes plus a seeded procedural scatter, rejected
+  near roads/buildings). A flat-shaded vertex-colour style throughout.
+- A procedural **3D runner** (box figure, Strava-orange jersey) runs the route
+  with a sin-driven run cycle, landing in a standing pose at the finish.
+- **Four cameras**, switchable live with keys **1–4** or the dropdown:
+  **first-person** (eye-level, the default — *"like I'm running"*),
+  **third-person** chase, **drone**, and **free** orbit (mouse-drag).
+- The orange route ribbon reveals progressively as you run (the 3D analog of
+  the flyby's gradient reveal); the same distance / pace / heart-rate HUD and
+  end card as the flyby render on top.
+- **Recording works the same way** — the in-browser **Record MP4** button and
+  the deterministic `render.js page=world` path both produce 1080×1920 / 30 fps
+  video. Everything is driven from `t ∈ [0,1]` with seeded randomness, so two
+  renders of the same activity are frame-for-frame identical.
+
+If Overpass is unreachable (rate-limited or down), it rotates through three
+mirrors, then falls back to a minimal world (ground + route + scattered trees)
+with a **Retry** button — the run still plays and records.
+
+Extra URL params (on top of `speed` / `name` / `render` shared with the flyby):
+`camera=firstperson|thirdperson|drone|free`, `osm=0` (skip Overpass — minimal
+world, handy offline), `shadows=0|1`, `bob=0` (disable head-bob), `seed=<n>`
+(tree scatter), `debug=1` (log draw stats). Elevation is flat in v1 (terrain,
+a GLTF runner, and a splits scene are future work).
+
+> `flyby.html` is untouched by this — the two views share only the parsers,
+> extracted into `activity-parsers.js`.
 
 ## Duration scaling
 

@@ -112,6 +112,11 @@
     background-repeat:no-repeat; background-position:right 10px center; }
   .field select:hover { border-color:#3a3f4a; }
   .field select:focus { outline:none; border-color:#FC4C02; }
+  .field input[type="text"] { background:#161922; color:#fff; border:1px solid #2a2e38;
+    border-radius:8px; padding:7px 12px; font-size:13px; font-family:inherit; width:130px; }
+  .field input[type="text"]::placeholder { color:#6b7280; }
+  .field input[type="text"]:hover { border-color:#3a3f4a; }
+  .field input[type="text"]:focus { outline:none; border-color:#FC4C02; }
   .panel-note { margin-top:18px; font-size:11px; line-height:1.55; color:#6b7280; }
   .repo-link { display:inline-flex; align-items:center; gap:6px; margin-top:12px;
     font-size:11px; font-weight:600; color:#9aa1ad; text-decoration:none;
@@ -149,6 +154,9 @@
 
   #overlay { position:absolute; inset:0; pointer-events:none; z-index:10; }
   #overlay.hidden { display:none; }
+
+  /* First-person avatar layer — between the map (below) and the HUD (z 10). */
+  #avatarCanvas { position:absolute; inset:0; pointer-events:none; z-index:8; }
 
   .meta-card { position:absolute; top:60px; right:60px; text-align:right; }
   .meta-card .loc { font-size:26px; font-weight:700; letter-spacing:3px;
@@ -283,9 +291,18 @@
       <option value="smooth">Smooth follow</option>
       <option value="cinematic">Cinematic</option>
       <option value="steady">Steady · north-up</option>
+      <option value="firstperson">First-person · chase</option>
     </select>
   </div>
+  <div class="field">
+    <label for="runnerName">Runner name</label>
+    <input type="text" id="runnerName" maxlength="24" placeholder="Optional" autocomplete="off">
+  </div>
   <div class="panel-note">TCX files add live heart rate, an effort-coloured route, and per-km splits.</div>
+  <a class="repo-link" href="world.html" title="Run your route in a low-poly 3D world">
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 1l6 3v8l-6 3-6-3V4l6-3zm0 1.6L3.5 4.4 8 6.2l4.5-1.8L8 2.6zM3 5.5v6l4.5 2.2V7.7L3 5.5zm10 0L8.5 7.7v6L13 11.5v-6z"/></svg>
+    <span>Try first-person 3D world →</span>
+  </a>
   <a class="repo-link" href="https://github.com/nicksonthc/kml-3d-flyby" target="_blank" rel="noopener" title="View source on GitHub">
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
     <span>View source on GitHub</span>
@@ -295,6 +312,7 @@
 <div id="hint">1080 × 1920 · vertical</div>
 <div class="stage" id="stage">
   <div id="map"></div>
+  <canvas id="avatarCanvas" width="1080" height="1920"></canvas>
   <div id="overlay" class="hidden">
     <div class="meta-card">
       <div class="loc" id="locName">—</div>
@@ -401,6 +419,16 @@ const CAMERA_PRESETS = {
   smooth:    { tau: 2.0, fixed: false, deadband: 11, maxRate: 22, behind: 25, ahead: 240 },
   cinematic: { tau: 1.4, fixed: false, deadband: 3,  maxRate: 75, behind: 50, ahead: 150 },
   steady:    { tau: 1.5, fixed: true  },
+  // First-person chase cam: high pitch low behind the runner, tight zoom, and
+  // the runner pushed down-screen (via camera padding) so the view looks ahead.
+  // The tight behind/ahead chord makes the bearing hug the local path direction.
+  firstperson: {
+    tau: 1.1, fixed: false, deadband: 2, maxRate: 55, behind: 8, ahead: 90,
+    fp: true,           // flag checked in drawFrame / updateAvatar
+    pitch: 73,          // chase pitch; eases back to PITCH during the end pull-back
+    zoomFly: 18.6,      // overrides the zoom preset's `fly` while chasing
+    runnerY: 0.68,      // runner's on-screen position, as a fraction of stage height
+  },
 };
 const CFG_DEFAULTS = { zoom: 'balanced', speed: 'medium', camera: 'smooth' };
 const CFG = { ...CFG_DEFAULTS };
@@ -421,6 +449,10 @@ if (RENDER_MODE) document.body.classList.add('render-mode');
     const v = params.get(key);
     if (v && tables[key][v] !== undefined) CFG[key] = v;
   }
+  // Runner name (first-person mode): ?name= wins, else last-used value.
+  let storedName = '';
+  try { storedName = localStorage.getItem('flybyRunnerName') || ''; } catch {}
+  CFG.runnerName = (params.get('name') || storedName).slice(0, 24);
 }
 
 let map = null;
@@ -901,16 +933,23 @@ function drawFrame(t) {
 
   // Hold the close zoom until ZOOM_OUT_START, then ease out to the wide zoom so
   // the viewer gets context on the full route before the end card fades in.
+  // zt also drives the first-person exit: pitch eases back down to PITCH and
+  // the ahead-offset eases to 0, so the end card plays over the usual wide shot.
+  const zt = tf <= ZOOM_OUT_START
+    ? 0 : easeInOut((tf - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
   const z = ZOOM_PRESETS[CFG.zoom] || ZOOM_PRESETS.balanced;
-  let zoom;
-  if (tf <= ZOOM_OUT_START) {
-    zoom = z.fly;
-  } else {
-    const zt = easeInOut((tf - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
-    zoom = z.fly + (z.end - z.fly) * zt;
-  }
+  const fp = !!cam.fp;
+  const flyZoom = fp ? cam.zoomFly : z.fly;
+  const zoom = flyZoom + (z.end - flyZoom) * zt;
+  const pitch = fp ? cam.pitch + (PITCH - cam.pitch) * zt : PITCH;
 
-  map.jumpTo({ center: pos, bearing, pitch: PITCH, zoom });
+  // First-person: padding pushes the tracked point down-screen so the avatar
+  // sits lower-center and the camera looks ahead. Padding (not a geographic
+  // offset) keeps the rotation pivot ON the runner — no lateral swing in turns.
+  const yFrac = fp ? 0.5 + (cam.runnerY - 0.5) * (1 - zt) : 0.5;
+  map.jumpTo({ center: pos, bearing, pitch, zoom,
+    padding: { top: (2 * yFrac - 1) * STAGE_H, bottom: 0, left: 0, right: 0 } });
+  updateAvatar(t, currentM, totalM, zoom, tf);
 
   // Route reveal — tinted by HR (TCX) or flat orange (KML).
   const grad = routeColorStops ? hrRevealGradient(revealT) : gradientForProgress(revealT);
@@ -1042,6 +1081,7 @@ function initMap(routeCoords) {
       ]
     },
     center, zoom: (ZOOM_PRESETS[CFG.zoom] || ZOOM_PRESETS.balanced).fly, pitch: PITCH, bearing: 0,
+    maxPitch: 85,   // default is 60, which would clamp the first-person chase pitch
     interactive: false, fadeDuration: 0, attributionControl: { compact: true },
     preserveDrawingBuffer: true
   });
@@ -1052,6 +1092,8 @@ function initMap(routeCoords) {
     if (!recording) return;
     const { ctx } = recording;
     ctx.drawImage(map.getCanvas(), 0, 0, STAGE_W, STAGE_H);
+    // Avatar layer (blank outside first-person mode — updateAvatar clears it).
+    ctx.drawImage(document.getElementById('avatarCanvas'), 0, 0, STAGE_W, STAGE_H);
     drawHUD(ctx, lastDrawT);
   });
 
@@ -1134,6 +1176,8 @@ async function startWithActivityText(text) {
   lastFrameWallMs = null;
   document.body.classList.remove('ending');
   document.body.classList.toggle('has-hr', !!routeData.hasHr);
+  const avatarCvs = document.getElementById('avatarCanvas');
+  avatarCvs.getContext('2d').clearRect(0, 0, STAGE_W, STAGE_H);
   prepSplits();
   prepRouteColor();
   document.getElementById('splitsCard').style.opacity = '0';
@@ -1164,6 +1208,13 @@ cameraSel.value = CFG.camera;
 // Zoom + camera are read live in drawFrame, so they update the running flyby.
 zoomSel.addEventListener('change', () => { CFG.zoom = zoomSel.value; });
 cameraSel.addEventListener('change', () => { CFG.camera = cameraSel.value; });
+// Runner name (first-person mode) — also read live; persists across reloads.
+const runnerNameInput = document.getElementById('runnerName');
+runnerNameInput.value = CFG.runnerName;
+runnerNameInput.addEventListener('input', () => {
+  CFG.runnerName = runnerNameInput.value.trim();
+  try { localStorage.setItem('flybyRunnerName', CFG.runnerName); } catch {}
+});
 // Speed changes the timeline length — re-derive it (takes effect on next play).
 speedSel.addEventListener('change', () => { CFG.speed = speedSel.value; applyTiming(); });
 
@@ -1245,6 +1296,138 @@ function setLetterSpacing(ctx, px) {
 }
 
 const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif';
+
+// ── First-person avatar ───────────────────────────────────────────
+// A cartoon runner drawn in Canvas 2D on its own stage-sized layer
+// (#avatarCanvas) so it shows up in live playback, Playwright renders and
+// the MediaRecorder composite alike. Everything is derived from video time
+// `t` — no wall clocks — so headless renders are deterministic.
+const AVATAR_BASE_H = 150;          // figure height (stage px) at the reference zoom
+const AVATAR_REF_ZOOM = 18.6;       // matches CAMERA_PRESETS.firstperson.zoomFly
+const CADENCE_STEPS_PER_SEC = 2.8;  // ~168 steps/min
+
+function updateAvatar(t, currentM, totalM, zoom, tf) {
+  const cvs = document.getElementById('avatarCanvas');
+  const actx = cvs.getContext('2d');
+  actx.clearRect(0, 0, STAGE_W, STAGE_H);
+
+  const cam = CAMERA_PRESETS[CFG.camera];
+  if (!cam || !cam.fp || !map || !routeData) return;
+
+  // Fade out with the live HUD as the end card rises; gone during splits.
+  const fade = 1 - clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+  if (fade <= 0.01) return;
+  if (SCENE.splitsStart < 1 && t >= SCENE.splitsStart) return;
+
+  // jumpTo is synchronous, so this projection matches the current frame.
+  const p = map.project(pointAtDist(currentM));
+  if (!isFinite(p.x) || !isFinite(p.y)) return;
+  const h = Math.min(220, Math.max(44, AVATAR_BASE_H * Math.pow(2, zoom - AVATAR_REF_ZOOM)));
+
+  // π per step — two steps per full sin cycle. Limbs blend to a standing
+  // pose over the last couple of meters as the runner "finishes".
+  const phase = t * DURATION_S * CADENCE_STEPS_PER_SEC * Math.PI;
+  const amp = clamp01((totalM - currentM) / 2);
+
+  actx.save();
+  actx.globalAlpha = fade;
+  drawAvatar(actx, p.x, p.y, h, phase, amp);
+  if (CFG.runnerName) drawNamePill(actx, p.x, p.y - h * 1.12, CFG.runnerName, h);
+  actx.restore();
+}
+
+// Back-view cartoon runner — the chase cam sits behind, so we see jersey,
+// hair and the flash of shoe soles. (x, y) is the ground point; `u` scales
+// all proportions off the figure height.
+function drawAvatar(ctx, x, y, h, phase, amp) {
+  const u = h / 100;
+  const SKIN = '#e8b48a', OUTLINE = '#240a00', SHORTS = '#1d2a4a', HAIR = '#3a2a1d';
+  const sL = Math.sin(phase) * amp;             // left-side leg swing (+ = lifted)
+  const sR = -sL;
+  const bob = Math.abs(Math.sin(phase)) * 3.5 * u * amp;  // one bounce per step
+  const sway = sL * 2 * u;                      // lateral hip sway
+  const hipY = y - 46 * u - bob;
+  const shoulderY = y - 78 * u - bob;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Shadow grounds the figure on the route-line tip.
+  ctx.beginPath();
+  ctx.ellipse(x, y, 26 * u, 8 * u, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fill();
+
+  const leg = (side, swing) => {                // side: -1 left, +1 right
+    const hipX = x + side * 6 * u + sway;
+    const lift = Math.max(0, swing) * 26 * u;   // heel kicks up toward the camera
+    const kneeX = hipX + swing * 2 * u + side * 1.5 * u;
+    const kneeY = y - 24 * u - lift * 0.45;
+    const footX = hipX + swing * 3 * u;
+    const footY = y - lift;
+    ctx.strokeStyle = SKIN; ctx.lineWidth = 9 * u;
+    ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY);
+    ctx.lineTo(footX, footY); ctx.stroke();
+    ctx.strokeStyle = SHORTS; ctx.lineWidth = 11 * u;   // shorts over the thigh
+    ctx.beginPath(); ctx.moveTo(hipX, hipY);
+    ctx.lineTo(hipX + (kneeX - hipX) * 0.45, hipY + (kneeY - hipY) * 0.45); ctx.stroke();
+    ctx.beginPath();                                    // sole flash = the run cue
+    ctx.ellipse(footX, footY, 5 * u, 3.5 * u, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#f5f5f5'; ctx.fill();
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = u; ctx.stroke();
+  };
+
+  const arm = (side, swing) => {                // counter-swings the same-side leg
+    const shX = x + side * 13 * u + sway;
+    const elbowX = shX + side * 7 * u;
+    const elbowY = y - 62 * u - bob + swing * 6 * u;
+    ctx.strokeStyle = SKIN; ctx.lineWidth = 7 * u;
+    ctx.beginPath(); ctx.moveTo(shX, shoulderY); ctx.lineTo(elbowX, elbowY);
+    ctx.lineTo(elbowX + side * 2 * u, elbowY - 8 * u); ctx.stroke();
+    ctx.strokeStyle = ROUTE_COLOR; ctx.lineWidth = 8.5 * u;   // jersey sleeve
+    ctx.beginPath(); ctx.moveTo(shX, shoulderY);
+    ctx.lineTo(shX + (elbowX - shX) * 0.5, shoulderY + (elbowY - shoulderY) * 0.5);
+    ctx.stroke();
+  };
+
+  // Painter's order: planted leg → torso → lifted leg (sole shows) → arms → head.
+  const legs = [[-1, sL], [1, sR]].sort((a, b) => a[1] - b[1]);
+  leg(legs[0][0], legs[0][1]);
+
+  roundRect(ctx, x - 13 * u + sway, y - 84 * u - bob, 26 * u, 40 * u, 12 * u);
+  ctx.fillStyle = ROUTE_COLOR; ctx.fill();              // jersey
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5 * u; ctx.stroke();
+
+  leg(legs[1][0], legs[1][1]);
+  arm(-1, -sL);
+  arm(1, -sR);
+
+  const headX = x + sway * 0.6, headY = y - 96 * u - bob;
+  ctx.beginPath(); ctx.arc(headX, headY, 10 * u, 0, Math.PI * 2);
+  ctx.fillStyle = SKIN; ctx.fill();
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5 * u; ctx.stroke();
+  ctx.beginPath();                                      // hair — mostly what you
+  ctx.arc(headX, headY, 10 * u, Math.PI * 0.9, Math.PI * 2.1);  // see from behind
+  ctx.fillStyle = HAIR; ctx.fill();
+
+  ctx.restore();
+}
+
+function drawNamePill(ctx, cx, bottomY, name, h) {
+  const fontPx = Math.min(30, Math.max(18, h * 0.18));
+  ctx.save();
+  ctx.font = `700 ${fontPx}px ${FONT_STACK}`;
+  const w = ctx.measureText(name).width + fontPx * 1.4;
+  const ph = fontPx * 1.8;
+  roundRect(ctx, cx - w / 2, bottomY - ph, w, ph, ph / 2);
+  ctx.fillStyle = 'rgba(10,12,18,0.78)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(name, cx, bottomY - ph / 2);
+  ctx.restore();
+}
 
 function drawHUD(ctx, t) {
   const W = STAGE_W, H = STAGE_H;

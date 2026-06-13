@@ -1,0 +1,2103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Runner World 3D — run your route in a low-poly 3D world</title>
+<meta name="description" content="Replay any Garmin KML or TCX activity as a first-person run through a low-poly 3D world built from OpenStreetMap — cartoon roads, buildings and trees, four camera modes, and 1080×1920 MP4 export. Free, runs in your browser.">
+<meta name="author" content="nicksonthc">
+<meta name="theme-color" content="#FC4C02">
+<style>
+  :root { --stage-w: 1080px; --stage-h: 1920px; --scale: 1; }
+  html, body { margin:0; padding:0; height:100%; background:#000; color:#fff; overflow:hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+
+  /* Fixed 1080x1920 portrait stage, scaled to fit the window — same contract
+     as flyby.html so render.js screenshots and MP4s match what you see. */
+  .stage { position:absolute; top:50%; left:50%; width:var(--stage-w); height:var(--stage-h);
+    transform: translate(-50%, -50%) scale(var(--scale));
+    transform-origin: center center;
+    background:#000; overflow:hidden; }
+
+  #gl { position:absolute; inset:0; width:100%; height:100%; display:block; background:#cfe8ff; }
+
+  #panel { position:fixed; top:20px; left:20px; z-index:50; width:264px;
+    background:#0e1014; border:1px solid #23262e; border-radius:16px;
+    padding:20px; color:#e7e9ee; box-shadow:0 12px 40px rgba(0,0,0,0.55); }
+  .panel-title { font-size:12px; font-weight:700; letter-spacing:4px;
+    text-transform:uppercase; color:#fff; margin-bottom:18px; }
+
+  .file-field { display:block; cursor:pointer; margin-bottom:6px; }
+  .file-btn { display:block; text-align:center; padding:12px;
+    border:1px dashed #3a3f4a; border-radius:10px; font-size:13px; font-weight:600;
+    color:#fff; background:#161922; transition:border-color .15s, background .15s; }
+  .file-field:hover .file-btn { border-color:#FC4C02; background:#1a1e28; }
+  .file-name { display:block; margin-top:8px; font-size:11px; color:#7f8694;
+    text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sample-note { margin:8px 0 6px; font-size:11px; color:#9aa1ad; text-align:center; }
+  .sample-btn { display:block; width:100%; margin-bottom:6px; padding:9px 12px;
+    border:1px solid #FC4C02; border-radius:9px; font-size:12px; font-weight:700;
+    letter-spacing:.2px; color:#FC4C02; background:rgba(252,76,2,.08); cursor:pointer;
+    transition:background .15s, color .15s, transform .15s; }
+  .sample-btn:hover { background:#FC4C02; color:#fff; transform:scale(1.03); }
+  .sample-btn:active { transform:scale(.97); }
+  .sample-btn:disabled { opacity:.7; cursor:default; }
+
+  .field { display:flex; align-items:center; justify-content:space-between; margin-top:14px; }
+  .field label { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9aa0ac; }
+  .field select { appearance:none; -webkit-appearance:none; cursor:pointer;
+    background:#161922; color:#fff; border:1px solid #2a2e38; border-radius:8px;
+    padding:7px 30px 7px 12px; font-size:13px; font-family:inherit;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%239aa0ac' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat; background-position:right 10px center; }
+  .field select:hover { border-color:#3a3f4a; }
+  .field select:focus { outline:none; border-color:#FC4C02; }
+  .field input[type="text"] { background:#161922; color:#fff; border:1px solid #2a2e38;
+    border-radius:8px; padding:7px 12px; font-size:13px; font-family:inherit; width:130px; }
+  .field input[type="text"]::placeholder { color:#6b7280; }
+  .field input[type="text"]:hover { border-color:#3a3f4a; }
+  .field input[type="text"]:focus { outline:none; border-color:#FC4C02; }
+
+  .replay-btn { display:none; width:100%; margin-top:16px; padding:10px 12px;
+    border:1px solid #2a2e38; border-radius:9px; font-size:12px; font-weight:700;
+    letter-spacing:.2px; color:#fff; background:#161922; cursor:pointer;
+    transition:border-color .15s, background .15s; }
+  .replay-btn:hover { border-color:#FC4C02; background:#1a1e28; }
+  body.has-kml .replay-btn { display:block; }
+
+  .panel-note { margin-top:16px; font-size:11px; line-height:1.55; color:#6b7280; }
+  .alt-link { display:inline-flex; align-items:center; gap:6px; margin-top:12px;
+    font-size:11px; font-weight:600; color:#9aa1ad; text-decoration:none;
+    transition:color .15s; }
+  .alt-link:hover { color:#fff; }
+  body.playing #panel { display:none; }
+
+  #recordBtn { position:fixed; top:20px; right:20px; z-index:50;
+    display:none; padding:11px 18px; border-radius:10px; border:1px solid #23262e;
+    background:#0e1014; color:#fff; font:600 12px/1 inherit; letter-spacing:2px;
+    text-transform:uppercase; cursor:pointer; box-shadow:0 12px 40px rgba(0,0,0,0.55);
+    transition:border-color .15s; }
+  #recordBtn:hover { border-color:#3a3f4a; }
+  #recordBtn.recording { background:#FC4C02; border-color:#FC4C02; }
+  #recordBtn .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:#fc4c02; margin-right:9px; vertical-align:middle; }
+  #recordBtn.recording .dot { background:#fff; animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:0.25; } }
+  body.has-kml #recordBtn { display:block; }
+  body.recording #panel { display:none; }
+  body.render-mode #panel, body.render-mode #recordBtn, body.render-mode #hint,
+  body.render-mode #camHint { display:none !important; }
+
+  #hint { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:50;
+    font-size:11px; opacity:0.5; letter-spacing:2px; text-transform:uppercase;
+    pointer-events:none; }
+  #camHint { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); z-index:50;
+    display:none; font-size:11px; opacity:0.55; letter-spacing:2px; text-transform:uppercase;
+    pointer-events:none; }
+  body.has-kml #camHint { display:block; }
+
+  #overlay { position:absolute; inset:0; pointer-events:none; z-index:10; }
+  #overlay.hidden { display:none; }
+
+  .meta-card { position:absolute; top:60px; right:60px; text-align:right; }
+  .meta-card .loc { font-size:26px; font-weight:700; letter-spacing:3px;
+    text-transform:uppercase; text-shadow:0 2px 12px rgba(0,0,0,0.9); }
+  .meta-card .date { font-size:16px; opacity:0.75; margin-top:8px; letter-spacing:4px; }
+
+  .stat-card { position:absolute; bottom:140px; left:60px; }
+  .stat-card .distance { font-size:128px; font-weight:200; line-height:0.95;
+    letter-spacing:-4px; text-shadow:0 4px 24px rgba(0,0,0,0.95);
+    font-variant-numeric: tabular-nums; }
+  .stat-card .distance .unit { font-size:32px; opacity:0.7; margin-left:14px;
+    font-weight:400; letter-spacing:3px; }
+  .stat-card .row { display:flex; gap:56px; margin-top:24px; }
+  .stat-card .row .label { font-size:14px; opacity:0.6; letter-spacing:3px;
+    text-transform:uppercase; }
+  .stat-card .row .value { font-size:30px; font-weight:500; margin-top:6px;
+    font-variant-numeric: tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.8); }
+
+  .stat-card .hr-stat { display:none; }
+  body.has-hr .stat-card .hr-stat { display:block; }
+  .stat-card .hr-stat .value { display:flex; align-items:center; gap:8px; }
+  .stat-card .hr-stat .heart { color:#ff414e; font-size:24px; line-height:1;
+    display:inline-block; transform-origin:center;
+    animation: hrbeat 1s infinite ease-in-out; }
+  @keyframes hrbeat { 0%,100%{transform:scale(1);} 14%{transform:scale(1.22);}
+    28%{transform:scale(1);} }
+
+  .lap-chip { position:absolute; bottom:160px; right:60px; padding:16px 28px;
+    background:rgba(252,76,2,0.92); border-radius:999px;
+    font-weight:700; letter-spacing:3px; font-size:18px; text-transform:uppercase;
+    box-shadow:0 4px 24px rgba(252,76,2,0.4); display:none; }
+
+  #namePill { position:absolute; display:none; transform:translate(-50%, -100%);
+    padding:8px 18px; background:rgba(10,12,18,0.78); border:1px solid rgba(255,255,255,0.25);
+    border-radius:999px; font-size:24px; font-weight:700; white-space:nowrap; }
+
+  .end-card { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; opacity:0;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.78) 100%); }
+  .end-card .big { font-size:180px; font-weight:200; line-height:1;
+    letter-spacing:-6px; font-variant-numeric: tabular-nums;
+    text-shadow:0 8px 32px rgba(0,0,0,0.9); }
+  .end-card .big .u { font-size:44px; opacity:0.55; letter-spacing:0; margin-left:8px; }
+  .end-card .sub { font-size:32px; margin-top:20px; opacity:0.88;
+    font-variant-numeric: tabular-nums; }
+  .end-card .pace { font-size:18px; margin-top:22px; opacity:0.55;
+    letter-spacing:5px; text-transform:uppercase; }
+  .end-card .hr-final { font-size:18px; margin-top:14px; opacity:0.7;
+    letter-spacing:3px; text-transform:uppercase; }
+  .end-card .hr-final .h { color:#ff414e; }
+  .end-card .hr-final:empty { display:none; }
+  .end-card .center { text-align:center; }
+
+  /* Loading overlay — shown while Overpass data downloads and the world builds. */
+  #loading { position:absolute; inset:0; z-index:20; display:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:28px;
+    background:rgba(6,9,15,0.88); }
+  #loading.shown { display:flex; }
+  .spinner { width:54px; height:54px; border-radius:50%;
+    border:4px solid rgba(252,76,2,0.18); border-top-color:#FC4C02;
+    animation:spin 0.9s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #loadingText { font-size:22px; letter-spacing:3px; text-transform:uppercase; opacity:0.85; }
+  #loadingSub { font-size:15px; letter-spacing:2px; opacity:0.45; margin-top:-14px; }
+  #osmRetry { display:none; padding:12px 26px; border:1px solid #FC4C02; border-radius:10px;
+    background:rgba(252,76,2,.1); color:#FC4C02; font:700 15px/1 inherit;
+    letter-spacing:2px; text-transform:uppercase; cursor:pointer; }
+  #osmRetry:hover { background:#FC4C02; color:#fff; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="panel-title">Runner&nbsp;World</div>
+  <label class="file-field">
+    <input type="file" id="kmlInput" accept=".kml,.tcx" hidden>
+    <span class="file-btn">Choose a KML or TCX file</span>
+    <span class="file-name" id="fileName">No file selected</span>
+  </label>
+  <div class="sample-note">No activity file of your own yet?</div>
+  <button type="button" id="sampleBtn" class="sample-btn">▶ Try a sample run (8 K demo)</button>
+  <div class="field">
+    <label for="cameraSel">Camera</label>
+    <select id="cameraSel">
+      <option value="firstperson">First-person</option>
+      <option value="thirdperson">Third-person</option>
+      <option value="drone">Drone</option>
+      <option value="free">Free orbit</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="speedSel">Speed</label>
+    <select id="speedSel">
+      <option value="slow">Slow</option>
+      <option value="medium">Medium</option>
+      <option value="fast">Fast</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="runnerName">Runner name</label>
+    <input type="text" id="runnerName" maxlength="24" placeholder="Optional" autocomplete="off">
+  </div>
+  <button type="button" id="replayBtn" class="replay-btn">↻ Replay</button>
+  <div class="panel-note">A low-poly 3D world is built around your route from OpenStreetMap —
+    roads, buildings and trees. Switch cameras live with keys 1–4.</div>
+  <a class="alt-link" href="flyby.html" title="Classic satellite flyby">← Classic satellite flyby</a>
+  <a class="alt-link" href="https://github.com/nicksonthc/kml-3d-flyby" target="_blank" rel="noopener" title="View source on GitHub">
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    <span>View source on GitHub</span>
+  </a>
+</div>
+<button id="recordBtn" title="Capture this run as 1080×1920 MP4"><span class="dot"></span>Record MP4</button>
+<div id="camHint">1 first-person · 2 third-person · 3 drone · 4 free</div>
+<div id="hint">1080 × 1920 · vertical</div>
+<div class="stage" id="stage">
+  <canvas id="gl" width="1080" height="1920"></canvas>
+  <div id="overlay" class="hidden">
+    <div class="meta-card">
+      <div class="loc" id="locName">—</div>
+      <div class="date" id="dateText">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="distance"><span id="distVal">0.00</span><span class="unit">KM</span></div>
+      <div class="row">
+        <div><div class="label">Pace</div><div class="value" id="paceVal">—:—/km</div></div>
+        <div class="hr-stat"><div class="label">Heart</div><div class="value"><span class="heart">&#10084;</span><span id="hrVal">—</span></div></div>
+        <div><div class="label">Elapsed</div><div class="value" id="elapsedVal">0:00</div></div>
+      </div>
+    </div>
+    <div class="lap-chip" id="lapChip">LAP 1</div>
+    <div id="namePill"></div>
+    <div class="end-card" id="endCard">
+      <div class="center">
+        <div class="big"><span id="finalDist">0</span><span class="u">KM</span></div>
+        <div class="sub">in <span id="finalTime">—</span></div>
+        <div class="pace">AVG <span id="finalPace">—:—</span> / KM</div>
+        <div class="hr-final" id="hrFinal"></div>
+      </div>
+    </div>
+  </div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loadingText">Fetching map data…</div>
+    <div id="loadingSub"></div>
+    <button type="button" id="osmRetry">Retry map data</button>
+  </div>
+</div>
+<script src="activity-parsers.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ════════════════════════════════════════════════════════════════════
+   S1 · Config & constants
+   ════════════════════════════════════════════════════════════════════ */
+const AP = window.ActivityParsers;
+
+const ROUTE_COLOR = '#FC4C02';
+const STAGE_W = 1080;
+const STAGE_H = 1920;
+const FPS_RENDER = 30;            // must match render.js FPS
+
+// Duration scales with distance — same formula as flyby.html so a run feels
+// the same length in either view.
+const DURATION_BASE_S = 20;
+const DURATION_PER_KM_S = 2.5;
+const DURATION_MIN_S = 25;
+const DURATION_MAX_S = 150;
+let DURATION_S = 45;
+function computeDurationS(km) {
+  return Math.max(DURATION_MIN_S,
+    Math.min(DURATION_MAX_S, DURATION_BASE_S + km * DURATION_PER_KM_S));
+}
+const REVEAL_FRACTION = 0.88;     // distance mapping — identical pacing to flyby
+const END_FRACTION = 0.94;        // end card rises over the last 6%
+const ZOOM_OUT_START = 0.82;      // finish pull-back start (flyby's zt)
+const SPEED_PRESETS = { slow: 1.7, medium: 1.25, fast: 0.85 };
+const CADENCE_STEPS_PER_SEC = 2.8;  // ~168 steps/min, same as the 2D avatar
+
+const WORLD = {
+  corridorPadM: 250,        // Overpass corridor half-width
+  groundPadM: 800,          // ground plane extends past the route bbox
+  fogColor: 0xd7ecff,
+  fogNear: 170, fogFar: 640,
+  eyeHeightM: 1.55,
+  buildingCap: 15000,
+  treeCap: 8000,
+  palette: [0xf2e6d8, 0xe8d8c8, 0xd8e2ea, 0xe6d2d2, 0xdde6d0, 0xece4c8, 0xd9d4e6],
+  grass: 0xa9d48b,
+  asphalt: 0x9aa3ad,
+  pathColor: 0xcfc6b8,
+  waterColor: 0x86c5dd,
+  parkColor: 0x9bcb82,
+  trunkColor: 0x8a6a4a,
+  canopyGreens: [0x69aa54, 0x7dbb5f, 0x55984c],
+};
+
+// Camera smoothing presets — radian port of flyby's deadband/tau/maxRate
+// bearing logic. behind/ahead are the look-ahead chord in meters.
+const CAM_CFG = {
+  firstperson: { behind: 6,  ahead: 70,  tau: 1.0, deadband: 0.02, maxRate: 1.1, fov: 75 },
+  thirdperson: { behind: 15, ahead: 120, tau: 1.6, deadband: 0.06, maxRate: 0.7, fov: 60 },
+  drone:       { behind: 40, ahead: 260, tau: 2.4, deadband: 0.10, maxRate: 0.4, fov: 55 },
+  end:         { behind: 40, ahead: 260, tau: 2.6, deadband: 0.10, maxRate: 0.35 },
+  runner:      { behind: 3,  ahead: 14,  tau: 0.30, deadband: 0,   maxRate: 4.0 },
+};
+const CAMERA_MODES = ['firstperson', 'thirdperson', 'drone', 'free'];
+
+function easeInOut(t) {
+  t = Math.min(Math.max(t, 0), 1);
+  return 0.5 - 0.5 * Math.cos(Math.PI * t);
+}
+function clamp01(x) { return Math.min(Math.max(x, 0), 1); }
+function clamp(x, a, b) { return Math.min(Math.max(x, a), b); }
+
+// Seeded PRNG — all world randomness flows through this so the same activity
+// builds the identical world every load (renders are reproducible).
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+const params = new URLSearchParams(location.search);
+const RENDER_MODE = params.get('render') === '1';
+if (RENDER_MODE) document.body.classList.add('render-mode');
+const OSM_ENABLED = params.get('osm') !== '0';
+const SHADOWS_PARAM = params.get('shadows');
+const HEAD_BOB = params.get('bob') !== '0';
+const DEBUG = params.get('debug') === '1';
+const SCATTER_SEED = parseInt(params.get('seed') || '1337', 10) || 1337;
+
+const CFG = { speed: 'medium', camera: 'firstperson', runnerName: '' };
+{
+  const v = params.get('speed');
+  if (v && SPEED_PRESETS[v] !== undefined) CFG.speed = v;
+  let c = params.get('camera');
+  if (c === 'free' && RENDER_MODE) c = 'firstperson';  // free cam is live-only
+  if (c && CAMERA_MODES.includes(c)) CFG.camera = c;
+  let storedName = '';
+  try { storedName = localStorage.getItem('flybyRunnerName') || ''; } catch {}
+  CFG.runnerName = (params.get('name') || storedName).slice(0, 24);
+}
+
+// Shadows: on by default on capable machines, off on weak ones, ?shadows=0/1 forces.
+const SHADOWS_ON = SHADOWS_PARAM != null
+  ? SHADOWS_PARAM === '1'
+  : (navigator.hardwareConcurrency ?? 8) > 4;
+
+function fitStage() {
+  const scale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+  document.documentElement.style.setProperty('--scale', scale);
+}
+window.addEventListener('resize', fitStage);
+fitStage();
+
+/* ════════════════════════════════════════════════════════════════════
+   S2 · Projection & route sampling
+   Local ENU meters around the route centroid: x = east, z = south, so
+   THREE's right-handed Y-up frame gets heading 0 = -Z = north.
+   ════════════════════════════════════════════════════════════════════ */
+const EARTH_K = 111320;  // meters per degree latitude
+
+function makeProjection(coords) {
+  let lonSum = 0, latSum = 0;
+  for (const c of coords) { lonSum += c[0]; latSum += c[1]; }
+  const lon0 = lonSum / coords.length, lat0 = latSum / coords.length;
+  const kx = Math.cos(lat0 * Math.PI / 180) * EARTH_K;
+  return {
+    origin: [lon0, lat0],
+    toLocal(c) { return { x: (c[0] - lon0) * kx, z: -(c[1] - lat0) * EARTH_K }; },
+    toLonLat(x, z) { return [lon0 + x / kx, lat0 - z / EARTH_K]; },
+  };
+}
+
+function makeRouteSampler(routeData, proj) {
+  const coords = routeData.coords, cum = routeData.cumDists;
+  const n = coords.length;
+  const xs = new Float64Array(n), zs = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = proj.toLocal(coords[i]);
+    xs[i] = p.x; zs[i] = p.z;
+  }
+  const totalM = cum[n - 1];
+
+  function posAt(d, out) {
+    out = out || new THREE.Vector3();
+    if (d <= 0) return out.set(xs[0], 0, zs[0]);
+    if (d >= totalM) return out.set(xs[n - 1], 0, zs[n - 1]);
+    let lo = 0, hi = n - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] <= d) lo = mid; else hi = mid;
+    }
+    const segLen = cum[hi] - cum[lo];
+    const f = segLen === 0 ? 0 : (d - cum[lo]) / segLen;
+    return out.set(xs[lo] + f * (xs[hi] - xs[lo]), 0, zs[lo] + f * (zs[hi] - zs[lo]));
+  }
+
+  return {
+    totalM, xs, zs,
+    posAt,
+    hrAt(d) { return AP.hrAtDist(routeData, d); },
+  };
+}
+
+// Heading smoother factory — one instance per camera mode. Heading is the
+// chord direction over [d-behind, d+ahead] with deadband / tau ease / rate
+// clamp, in radians with shortest-angle wrap (port of flyby drawFrame).
+function makeHeadingSmoother(cfg) {
+  let h = null;
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  return {
+    reset() { h = null; },
+    current() { return h; },
+    update(d, dt) {
+      sampler.posAt(Math.max(d - cfg.behind, 0), a);
+      sampler.posAt(Math.min(d + cfg.ahead, sampler.totalM), b);
+      const dx = b.x - a.x, dz = b.z - a.z;
+      if (Math.abs(dx) < 1e-9 && Math.abs(dz) < 1e-9) return h ?? 0;
+      const raw = Math.atan2(dx, -dz);
+      if (h === null) { h = raw; return h; }
+      let err = ((raw - h + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      if (Math.abs(err) <= (cfg.deadband ?? 0)) return h;
+      const alpha = 1 - Math.exp(-dt / cfg.tau);
+      let step = err * alpha;
+      const maxStep = (cfg.maxRate ?? 1e9) * dt;
+      if (step > maxStep) step = maxStep;
+      else if (step < -maxStep) step = -maxStep;
+      h = ((h + step + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      return h;
+    }
+  };
+}
+const fwdFromHeading = (h, out) => (out || new THREE.Vector3()).set(Math.sin(h), 0, -Math.cos(h));
+const rightFromHeading = (h, out) => (out || new THREE.Vector3()).set(Math.cos(h), 0, Math.sin(h));
+
+/* ════════════════════════════════════════════════════════════════════
+   S3 · Overpass — corridor polygon, query, fetch, cache
+   ════════════════════════════════════════════════════════════════════ */
+
+// Corridor as a chain of padded bboxes along the route — one box per ~900 m
+// span, all unioned in a single Overpass query. Boxes are valid for ANY route
+// shape (loops, out-and-backs) where a buffered polygon could self-intersect,
+// and Overpass set-semantics dedupe elements matched by several boxes.
+function buildRouteBoxes(coords, padM) {
+  const padLat = padM / EARTH_K;
+  const boxes = [];
+  let cur = null;
+  for (const [lon, lat] of coords) {
+    if (!cur) { cur = { s: lat, n: lat, w: lon, e: lon }; continue; }
+    const ns = Math.min(cur.s, lat), nn = Math.max(cur.n, lat);
+    const nw = Math.min(cur.w, lon), ne = Math.max(cur.e, lon);
+    const spanM = Math.max((nn - ns) * EARTH_K,
+      (ne - nw) * EARTH_K * Math.cos(lat * Math.PI / 180));
+    if (spanM > 900) {
+      boxes.push(cur);
+      cur = { s: lat, n: lat, w: lon, e: lon };
+    } else {
+      cur.s = ns; cur.n = nn; cur.w = nw; cur.e = ne;
+    }
+  }
+  if (cur) boxes.push(cur);
+  return boxes.map(b => {
+    const padLon = padM / (EARTH_K * Math.cos(((b.s + b.n) / 2) * Math.PI / 180));
+    return [
+      +(b.s - padLat).toFixed(6), +(b.w - padLon).toFixed(6),
+      +(b.n + padLat).toFixed(6), +(b.e + padLon).toFixed(6),
+    ];
+  });
+}
+
+function overpassQL(boxes) {
+  const parts = [];
+  for (const b of boxes) {
+    const B = `(${b.join(',')})`;
+    parts.push(
+      `way["building"]${B};`,
+      `relation["building"]["type"="multipolygon"]${B};`,
+      `way["highway"]${B};`,
+      `node["natural"="tree"]${B};`,
+      `way["natural"="water"]${B};`,
+      `way["leisure"~"^(park|pitch|garden|playground)$"]${B};`,
+      `way["landuse"~"^(grass|meadow|recreation_ground|village_green)$"]${B};`,
+    );
+  }
+  return `[out:json][timeout:90];\n(\n${parts.join('\n')}\n);\nout geom;`;
+}
+
+const OSM_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let lastBoxes = null;  // kept for the Retry button
+
+async function fetchOsm(boxes, onStatus) {
+  lastBoxes = boxes;
+  const cacheKey = 'osmv1:' + fnv1a(JSON.stringify(boxes)).toString(16);
+  try {
+    const hit = JSON.parse(localStorage.getItem(cacheKey));
+    if (hit && hit.elements && Date.now() - hit.ts < 7 * 864e5) {
+      onStatus('Map data loaded from cache');
+      return hit.elements;
+    }
+  } catch {}
+
+  const q = overpassQL(boxes);
+  for (const ep of OSM_ENDPOINTS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        onStatus(`Fetching map data… (${new URL(ep).host})`);
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 90000);
+        const res = await fetch(ep, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(q),
+          signal: ctrl.signal,
+        });
+        clearTimeout(tid);
+        if (res.status === 429 || res.status === 504) { await sleep(1500); continue; }
+        if (!res.ok) break;  // hard error → next endpoint
+        const json = await res.json();
+        const elements = json.elements || [];
+        try {
+          const s = JSON.stringify({ ts: Date.now(), elements });
+          if (s.length < 3_500_000) localStorage.setItem(cacheKey, s);
+        } catch {
+          // Quota: evict older osm cache entries and retry once.
+          try {
+            for (const k of Object.keys(localStorage)) if (k.startsWith('osmv1:')) localStorage.removeItem(k);
+            const s = JSON.stringify({ ts: Date.now(), elements });
+            if (s.length < 3_500_000) localStorage.setItem(cacheKey, s);
+          } catch {}
+        }
+        return elements;
+      } catch (e) {
+        // network error / abort → try next endpoint
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S4 · World builders
+   ════════════════════════════════════════════════════════════════════ */
+let renderer, scene, camera, controls;
+let worldGroup = null, runner = null, routeRibbon = null, sky = null;
+let worldBuilt = false;   // true once buildWorld has finished for the current activity
+let dirLight = null, sunTarget = null;
+let proj = null, sampler = null, routeData = null;
+let occupancy = null;
+let smoothers = null;
+let worldStats = { buildings: 0, trees: 0, roads: 0, fallback: false };
+
+// Spatial hash for "is anything within r meters" rejection tests (tree scatter).
+function makeGrid(cell) {
+  const m = new Map();
+  return {
+    insert(x, z) {
+      const k = Math.floor(x / cell) + '|' + Math.floor(z / cell);
+      let a = m.get(k);
+      if (!a) { a = []; m.set(k, a); }
+      a.push(x, z);
+    },
+    near(x, z, r) {
+      const r2 = r * r;
+      const c0x = Math.floor((x - r) / cell), c1x = Math.floor((x + r) / cell);
+      const c0z = Math.floor((z - r) / cell), c1z = Math.floor((z + r) / cell);
+      for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) {
+        const a = m.get(cx + '|' + cz);
+        if (!a) continue;
+        for (let i = 0; i < a.length; i += 2) {
+          const dx = a[i] - x, dz = a[i + 1] - z;
+          if (dx * dx + dz * dz < r2) return true;
+        }
+      }
+      return false;
+    }
+  };
+}
+
+function insertLineIntoGrid(grid, pts, step) {
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pts[i - 1].x, az = pts[i - 1].z;
+    const dx = pts[i].x - ax, dz = pts[i].z - az;
+    const len = Math.hypot(dx, dz);
+    const steps = Math.max(1, Math.ceil(len / step));
+    for (let s = 0; s <= steps; s++) grid.insert(ax + dx * s / steps, az + dz * s / steps);
+  }
+}
+
+// Triangle-strip ribbon along a polyline (clamped miter joints). Indexed,
+// segments in order along the line so setDrawRange can reveal progress.
+function polylineRibbon(rawPts, width, y) {
+  // drop duplicate consecutive points
+  const pts = [];
+  for (const p of rawPts) {
+    const prev = pts[pts.length - 1];
+    if (!prev || Math.hypot(p.x - prev.x, p.z - prev.z) > 1e-4) pts.push(p);
+  }
+  const n = pts.length;
+  if (n < 2) return null;
+  const half = width / 2;
+  const pos = new Float32Array(n * 2 * 3);
+  const nrm = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++) {
+    let d1x, d1z, d2x, d2z;
+    if (i > 0) { d1x = pts[i].x - pts[i - 1].x; d1z = pts[i].z - pts[i - 1].z; }
+    if (i < n - 1) { d2x = pts[i + 1].x - pts[i].x; d2z = pts[i + 1].z - pts[i].z; }
+    if (i === 0) { d1x = d2x; d1z = d2z; }
+    if (i === n - 1) { d2x = d1x; d2z = d1z; }
+    const l1 = Math.hypot(d1x, d1z) || 1, l2 = Math.hypot(d2x, d2z) || 1;
+    d1x /= l1; d1z /= l1; d2x /= l2; d2z /= l2;
+    let mx = d1x + d2x, mz = d1z + d2z;
+    const ml = Math.hypot(mx, mz);
+    if (ml < 1e-6) { mx = d2x; mz = d2z; } else { mx /= ml; mz /= ml; }
+    const nx = mz, nz = -mx;                       // left normal of the miter dir
+    const dot = Math.abs(nx * d1z - nz * d1x);     // cos(half-angle)
+    const scale = half / clamp(dot || 1, 0.4, 1);  // clamp miter to 2.5x
+    const o = i * 6;
+    pos[o]     = pts[i].x + nx * scale; pos[o + 1] = y; pos[o + 2] = pts[i].z + nz * scale;
+    pos[o + 3] = pts[i].x - nx * scale; pos[o + 4] = y; pos[o + 5] = pts[i].z - nz * scale;
+    nrm[o + 1] = 1; nrm[o + 4] = 1;
+  }
+  const idx = new Uint32Array((n - 1) * 6);
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+    const o = i * 6;
+    idx[o] = a; idx[o + 1] = b; idx[o + 2] = c;
+    idx[o + 3] = b; idx[o + 4] = d; idx[o + 5] = c;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  return geo;
+}
+
+function addUniformColor(geo, hex) {
+  const c = new THREE.Color(hex);
+  const count = geo.getAttribute('position').count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+function buildGround(rng) {
+  const minX = Math.min(...sampler.xs) - WORLD.groundPadM;
+  const maxX = Math.max(...sampler.xs) + WORLD.groundPadM;
+  const minZ = Math.min(...sampler.zs) - WORLD.groundPadM;
+  const maxZ = Math.max(...sampler.zs) + WORLD.groundPadM;
+  const w = maxX - minX, h = maxZ - minZ;
+  const seg = 48;
+  const geo = new THREE.PlaneGeometry(w, h, seg, seg);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
+  // Seeded per-vertex green jitter — the low-poly "patchy meadow" look.
+  const grass = new THREE.Color(WORLD.grass);
+  const count = geo.getAttribute('position').count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const f = 0.94 + rng() * 0.12;
+    colors[i * 3] = grass.r * f; colors[i * 3 + 1] = grass.g * f; colors[i * 3 + 2] = grass.b * f;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true,
+    polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = SHADOWS_ON;
+  return mesh;
+}
+
+const ROAD_WIDTH = {
+  motorway: 9, motorway_link: 7, trunk: 9, trunk_link: 7,
+  primary: 8, primary_link: 6, secondary: 7, secondary_link: 6,
+  tertiary: 6, tertiary_link: 5, residential: 5, unclassified: 5,
+  living_street: 4.5, service: 3.5, cycleway: 2.5, track: 2.5,
+  footway: 2, path: 2, pedestrian: 3, steps: 1.8, bridleway: 2,
+};
+const ROAD_SKIP = new Set(['proposed', 'construction', 'corridor', 'elevator',
+  'raceway', 'bus_guideway', 'platform']);
+const PATH_CLASSES = new Set(['footway', 'path', 'pedestrian', 'cycleway',
+  'track', 'steps', 'bridleway']);
+
+function buildRoads(ways) {
+  const geos = [];
+  for (const w of ways) {
+    const cls = w.tags?.highway;
+    if (!cls || ROAD_SKIP.has(cls) || !w.geometry || w.geometry.length < 2) continue;
+    const width = ROAD_WIDTH[cls] ?? 4;
+    const isPath = PATH_CLASSES.has(cls);
+    const pts = w.geometry.map(g => proj.toLocal([g.lon, g.lat]));
+    const geo = polylineRibbon(pts, width, isPath ? 0.02 : 0.04);
+    if (!geo) continue;
+    addUniformColor(geo, isPath ? WORLD.pathColor : WORLD.asphalt);
+    geos.push(geo);
+    insertLineIntoGrid(occupancy, pts, 6);
+    worldStats.roads++;
+  }
+  if (!geos.length) return null;
+  const merged = mergeGeometries(geos, false);
+  geos.forEach(g => g.dispose());
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(merged, mat);
+  mesh.receiveShadow = SHADOWS_ON;
+  return mesh;
+}
+
+// The route as an orange ribbon revealed by setDrawRange — uniform 4 m
+// segments so the draw range maps linearly to distance (3D analog of the
+// flyby's line-gradient reveal). A dimmer full ribbon underneath previews
+// the upcoming path.
+function buildRouteRibbon() {
+  const stepM = 4;
+  const count = Math.max(2, Math.ceil(sampler.totalM / stepM) + 1);
+  const pts = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    sampler.posAt(Math.min(i * stepM, sampler.totalM), v);
+    pts.push({ x: v.x, z: v.z });
+  }
+  const group = new THREE.Group();
+
+  // Upcoming path preview — sandy trail tone so it reads as a path, not mud.
+  const underGeo = polylineRibbon(pts, 2.6, 0.10);
+  const under = new THREE.Mesh(underGeo,
+    new THREE.MeshBasicMaterial({ color: 0xc99a6a, side: THREE.DoubleSide,
+      transparent: true, opacity: 0.9 }));
+  group.add(under);
+
+  const topGeo = polylineRibbon(pts, 2.4, 0.14);
+  const top = new THREE.Mesh(topGeo,
+    new THREE.MeshBasicMaterial({ color: ROUTE_COLOR, side: THREE.DoubleSide }));
+  group.add(top);
+
+  const segCount = topGeo.getIndex().count / 6;
+  insertLineIntoGrid(occupancy, pts, 6);
+
+  return {
+    group,
+    setProgress(f) {
+      top.geometry.setDrawRange(0, Math.max(0, Math.floor(clamp01(f) * segCount)) * 6);
+    }
+  };
+}
+
+function ringToLocal(geometry) {
+  const ring = geometry.map(g => proj.toLocal([g.lon, g.lat]));
+  // drop the closing duplicate — THREE.Shape closes automatically
+  if (ring.length > 1) {
+    const a = ring[0], b = ring[ring.length - 1];
+    if (Math.hypot(a.x - b.x, a.z - b.z) < 1e-6) ring.pop();
+  }
+  return ring;
+}
+function isClosed(geometry) {
+  if (!geometry || geometry.length < 4) return false;
+  const a = geometry[0], b = geometry[geometry.length - 1];
+  return Math.abs(a.lat - b.lat) < 1e-7 && Math.abs(a.lon - b.lon) < 1e-7;
+}
+function pointInRing(x, z, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].x, zi = ring[i].z, xj = ring[j].x, zj = ring[j].z;
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function ringToShape(ring) {
+  const shape = new THREE.Shape();
+  shape.moveTo(ring[0].x, -ring[0].z);
+  for (let i = 1; i < ring.length; i++) shape.lineTo(ring[i].x, -ring[i].z);
+  return shape;
+}
+function ringToPath(ring) {
+  const path = new THREE.Path();
+  path.moveTo(ring[0].x, -ring[0].z);
+  for (let i = 1; i < ring.length; i++) path.lineTo(ring[i].x, -ring[i].z);
+  return path;
+}
+
+// Per-face wall/roof colors after rotation; flat shading via non-indexed +
+// computeVertexNormals.
+function colorizeBuilding(geo, wallHex, roofHex) {
+  const posA = geo.getAttribute('position');
+  const count = posA.count;
+  const colors = new Float32Array(count * 3);
+  const wall = new THREE.Color(wallHex), roof = new THREE.Color(roofHex);
+  for (let i = 0; i < count; i += 3) {
+    const ax = posA.getX(i), ay = posA.getY(i), az = posA.getZ(i);
+    const bx = posA.getX(i + 1), by = posA.getY(i + 1), bz = posA.getZ(i + 1);
+    const cx = posA.getX(i + 2), cy = posA.getY(i + 2), cz = posA.getZ(i + 2);
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+    const nx = e1y * e2z - e1z * e2y;
+    const ny = e1z * e2x - e1x * e2z;
+    const nz = e1x * e2y - e1y * e2x;
+    const horizontal = ny * ny > 0.5 * (nx * nx + ny * ny + nz * nz);
+    const c = horizontal ? roof : wall;
+    for (let k = 0; k < 3; k++) {
+      colors[(i + k) * 3] = c.r; colors[(i + k) * 3 + 1] = c.g; colors[(i + k) * 3 + 2] = c.b;
+    }
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function buildingHeight(tags, rng) {
+  const h = parseFloat(tags.height);
+  if (Number.isFinite(h) && h > 0) return Math.min(h, 120);
+  const lv = parseFloat(tags['building:levels']);
+  if (Number.isFinite(lv) && lv > 0) return Math.min(lv * 3 + 1.5, 120);
+  return 4 + rng() * 5;
+}
+
+function buildBuildings(elements, routeGridPts) {
+  // Collect footprints: ways with closed rings + simple multipolygons.
+  const footprints = [];
+  for (const el of elements) {
+    if (el.type === 'way' && el.tags?.building && isClosed(el.geometry)) {
+      footprints.push({ id: el.id, tags: el.tags, outer: ringToLocal(el.geometry), holes: [] });
+    } else if (el.type === 'relation' && el.tags?.building && el.members) {
+      const outers = el.members.filter(m => m.role === 'outer' && isClosed(m.geometry))
+        .map(m => ringToLocal(m.geometry));
+      const inners = el.members.filter(m => m.role === 'inner' && isClosed(m.geometry))
+        .map(m => ringToLocal(m.geometry));
+      for (const outer of outers) {
+        const holes = inners.filter(inn => inn.length && pointInRing(inn[0].x, inn[0].z, outer));
+        footprints.push({ id: el.id, tags: el.tags, outer, holes });
+      }
+    }
+  }
+
+  // Cap: keep the footprints nearest the route.
+  if (footprints.length > WORLD.buildingCap) {
+    for (const f of footprints) {
+      let cx = 0, cz = 0;
+      for (const p of f.outer) { cx += p.x; cz += p.z; }
+      cx /= f.outer.length; cz /= f.outer.length;
+      let best = Infinity;
+      for (let i = 0; i < routeGridPts.length; i += 2) {
+        const dx = routeGridPts[i] - cx, dz = routeGridPts[i + 1] - cz;
+        const d = dx * dx + dz * dz;
+        if (d < best) best = d;
+      }
+      f._d = best;
+    }
+    footprints.sort((a, b) => a._d - b._d);
+    footprints.length = WORLD.buildingCap;
+  }
+
+  // Build + bucket into 300 m chunks so frustum culling has something to cull.
+  const chunks = new Map();
+  for (const f of footprints) {
+    try {
+      if (f.outer.length < 3 || f.outer.length > 200) continue;
+      const rng = mulberry32((f.id ^ 0x9e3779b9) >>> 0);
+      const h = buildingHeight(f.tags, rng);
+      const wall = WORLD.palette[Math.floor(rng() * WORLD.palette.length)];
+      const wallC = new THREE.Color(wall);
+      const jitter = 0.95 + rng() * 0.08;
+      wallC.multiplyScalar(jitter);
+      const roofC = wallC.clone().multiplyScalar(0.82);
+
+      const shape = ringToShape(f.outer);
+      for (const hole of f.holes) {
+        if (hole.length >= 3 && hole.length <= 100) shape.holes.push(ringToPath(hole));
+      }
+      let geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+      if (geo.index) geo = geo.toNonIndexed();
+      geo.rotateX(-Math.PI / 2);
+      colorizeBuilding(geo, wallC.getHex(), roofC.getHex());
+
+      let cx = 0, cz = 0;
+      for (const p of f.outer) { cx += p.x; cz += p.z; occupancy.insert(p.x, p.z); }
+      cx /= f.outer.length; cz /= f.outer.length;
+      occupancy.insert(cx, cz);
+      const key = Math.floor(cx / 300) + '|' + Math.floor(cz / 300);
+      let arr = chunks.get(key);
+      if (!arr) { arr = []; chunks.set(key, arr); }
+      arr.push(geo);
+      worldStats.buildings++;
+    } catch (e) {
+      // one bad polygon must not kill the world
+    }
+  }
+
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const meshes = [];
+  for (const arr of chunks.values()) {
+    const merged = mergeGeometries(arr, false);
+    arr.forEach(g => g.dispose());
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = SHADOWS_ON;
+    mesh.receiveShadow = SHADOWS_ON;
+    meshes.push(mesh);
+  }
+  return meshes;
+}
+
+// Flat tinted polygons: water + parks/grass. Cheap, big visual win.
+function buildFlatPolys(elements) {
+  const geos = [];
+  for (const el of elements) {
+    if (el.type !== 'way' || !el.tags || !isClosed(el.geometry)) continue;
+    let color = null, y = 0;
+    if (el.tags.natural === 'water') { color = WORLD.waterColor; y = 0.012; }
+    else if (el.tags.leisure || el.tags.landuse) { color = WORLD.parkColor; y = 0.008; }
+    if (color == null) continue;
+    try {
+      const ring = ringToLocal(el.geometry);
+      if (ring.length < 3 || ring.length > 300) continue;
+      let geo = new THREE.ShapeGeometry(ringToShape(ring));
+      if (geo.index) geo = geo.toNonIndexed();
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(0, y, 0);
+      addUniformColor(geo, color);
+      geo.computeVertexNormals();
+      geos.push(geo);
+    } catch {}
+  }
+  if (!geos.length) return null;
+  const merged = mergeGeometries(geos, false);
+  geos.forEach(g => g.dispose());
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  return new THREE.Mesh(merged, mat);
+}
+
+// Trees: OSM natural=tree nodes + seeded procedural scatter, rejected near
+// roads / buildings / the route via the occupancy grid. Two InstancedMeshes
+// (trunks + canopies) sharing instance index.
+function buildTrees(elements) {
+  const rng = mulberry32(SCATTER_SEED);
+  const spots = [];
+
+  for (const el of elements) {
+    if (el.type === 'node' && el.tags?.natural === 'tree') {
+      const p = proj.toLocal([el.lon, el.lat]);
+      spots.push(p);
+      if (spots.length >= WORLD.treeCap) break;
+    }
+  }
+
+  // Procedural scatter: random distance along route + random lateral offset,
+  // ~1 tree / 900 m² of corridor.
+  const targetScatter = Math.min(WORLD.treeCap - spots.length,
+    Math.floor(sampler.totalM * 0.45));
+  const v = new THREE.Vector3(), v2 = new THREE.Vector3();
+  let attempts = 0;
+  let placed = 0;
+  while (placed < targetScatter && attempts < targetScatter * 4) {
+    attempts++;
+    const d = rng() * sampler.totalM;
+    const lat = (rng() * 2 - 1) * (WORLD.corridorPadM - 12);
+    sampler.posAt(d, v);
+    sampler.posAt(Math.min(d + 8, sampler.totalM), v2);
+    let dx = v2.x - v.x, dz = v2.z - v.z;
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l; dz /= l;
+    const x = v.x + dz * lat, z = v.z - dx * lat;   // left normal × lateral
+    if (Math.abs(lat) < 7) continue;                 // keep the running line clear
+    if (occupancy.near(x, z, 7)) continue;
+    spots.push({ x, z });
+    occupancy.insert(x, z);
+    placed++;
+  }
+
+  const n = spots.length;
+  if (!n) return [];
+  worldStats.trees = n;
+
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1.5, 5);
+  trunkGeo.translate(0, 0.75, 0);
+  const canopyGeo = new THREE.IcosahedronGeometry(1.35, 0);
+  canopyGeo.translate(0, 2.35, 0);
+
+  const trunks = new THREE.InstancedMesh(trunkGeo,
+    new THREE.MeshLambertMaterial({ color: WORLD.trunkColor }), n);
+  const canopies = new THREE.InstancedMesh(canopyGeo,
+    new THREE.MeshLambertMaterial({ color: 0xffffff }), n);
+
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const greens = WORLD.canopyGreens.map(g => new THREE.Color(g));
+  for (let i = 0; i < n; i++) {
+    const s = 0.75 + rng() * 0.75;
+    q.setFromAxisAngle(up, rng() * Math.PI * 2);
+    m.compose(new THREE.Vector3(spots[i].x, 0, spots[i].z), q,
+      new THREE.Vector3(s, s * (0.9 + rng() * 0.3), s));
+    trunks.setMatrixAt(i, m);
+    canopies.setMatrixAt(i, m);
+    canopies.setColorAt(i, greens[Math.floor(rng() * greens.length)]);
+  }
+  trunks.instanceMatrix.needsUpdate = true;
+  canopies.instanceMatrix.needsUpdate = true;
+  if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
+  trunks.castShadow = SHADOWS_ON;
+  canopies.castShadow = SHADOWS_ON;
+  return [trunks, canopies];
+}
+
+// Finish-line marker: pole + orange flag at the route end.
+function buildFinishFlag() {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 3.4, 6),
+    new THREE.MeshLambertMaterial({ color: 0xeeeeee }));
+  pole.position.y = 1.7;
+  g.add(pole);
+  const flag = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 0.7, 0.04),
+    new THREE.MeshLambertMaterial({ color: ROUTE_COLOR, side: THREE.DoubleSide }));
+  flag.position.set(0.62, 2.95, 0);
+  g.add(flag);
+  const end = sampler.posAt(sampler.totalM);
+  g.position.set(end.x, 0, end.z);
+  return g;
+}
+
+function buildSky() {
+  const geo = new THREE.SphereGeometry(1500, 24, 12);
+  const posA = geo.getAttribute('position');
+  const colors = new Float32Array(posA.count * 3);
+  const horizon = new THREE.Color(0xdcefff);
+  const zenith = new THREE.Color(0x6fb6ee);
+  const c = new THREE.Color();
+  for (let i = 0; i < posA.count; i++) {
+    const t = clamp01(posA.getY(i) / 1500 * 1.6);
+    c.lerpColors(horizon, zenith, t);
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide,
+    fog: false, depthWrite: false });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
+function disposeWorld() {
+  if (!worldGroup) return;
+  worldGroup.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+  });
+  scene.remove(worldGroup);
+  worldGroup = null;
+}
+
+function buildWorld(elements, onStatus) {
+  disposeWorld();
+  worldGroup = new THREE.Group();
+  occupancy = makeGrid(10);
+  worldStats = { buildings: 0, trees: 0, roads: 0, fallback: elements == null };
+
+  const groundRng = mulberry32(fnv1a('ground' + SCATTER_SEED));
+  worldGroup.add(buildGround(groundRng));
+
+  // Coarse route point list (for the building cap's distance sort).
+  const routeGridPts = [];
+  {
+    const v = new THREE.Vector3();
+    for (let d = 0; d <= sampler.totalM; d += 50) {
+      sampler.posAt(d, v);
+      routeGridPts.push(v.x, v.z);
+    }
+  }
+
+  if (elements) {
+    onStatus('Building world… roads');
+    const roadMesh = buildRoads(elements.filter(e => e.type === 'way' && e.tags?.highway));
+    if (roadMesh) worldGroup.add(roadMesh);
+
+    const flats = buildFlatPolys(elements);
+    if (flats) worldGroup.add(flats);
+
+    onStatus('Building world… buildings');
+    for (const mesh of buildBuildings(elements, routeGridPts)) worldGroup.add(mesh);
+  }
+
+  // Route ribbon AFTER roads (occupancy) but trees need both.
+  routeRibbon = buildRouteRibbon();
+  worldGroup.add(routeRibbon.group);
+  routeRibbon.setProgress(0);
+
+  onStatus('Building world… trees');
+  for (const mesh of buildTrees(elements || [])) worldGroup.add(mesh);
+
+  worldGroup.add(buildFinishFlag());
+  scene.add(worldGroup);
+
+  if (DEBUG) console.log('[world]', worldStats);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S5 · Runner — low-poly box figure with a sin-driven run cycle
+   ════════════════════════════════════════════════════════════════════ */
+function createRunner() {
+  const SKIN = 0xe8b48a, JERSEY = 0xFC4C02, SHORTS = 0x1d2a4a,
+    HAIR = 0x3a2a1d, SHOE = 0xf5f5f5;
+  const mat = hex => new THREE.MeshLambertMaterial({ color: hex });
+  const box = (w, h, d, m) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    mesh.castShadow = SHADOWS_ON;
+    return mesh;
+  };
+
+  const group = new THREE.Group();          // origin at the feet
+  const hips = new THREE.Group();
+  hips.position.y = 0.98;
+  group.add(hips);
+
+  const pelvis = box(0.34, 0.18, 0.22, mat(SHORTS));
+  pelvis.position.y = 0.02;
+  hips.add(pelvis);
+
+  const torso = box(0.42, 0.52, 0.24, mat(JERSEY));
+  torso.position.y = 0.38;
+  hips.add(torso);
+
+  const head = box(0.26, 0.27, 0.26, mat(SKIN));
+  head.position.y = 0.81;
+  hips.add(head);
+  const hair = box(0.28, 0.11, 0.28, mat(HAIR));
+  hair.position.y = 0.97;
+  hips.add(hair);
+
+  function makeArm(side) {                  // side: -1 left, +1 right
+    const arm = new THREE.Group();
+    arm.position.set(side * 0.27, 0.58, 0);
+    const upper = box(0.11, 0.30, 0.12, mat(JERSEY));
+    upper.position.y = -0.15;
+    arm.add(upper);
+    const fore = new THREE.Group();         // fixed runner's elbow bend
+    fore.position.y = -0.30;
+    fore.rotation.x = 1.15;                 // forearm forward, like a runner
+    const lower = box(0.10, 0.28, 0.10, mat(SKIN));
+    lower.position.y = -0.13;
+    fore.add(lower);
+    arm.add(fore);
+    hips.add(arm);
+    return arm;
+  }
+  function makeLeg(side) {
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.11, -0.02, 0);
+    const thigh = box(0.15, 0.42, 0.17, mat(SKIN));
+    thigh.position.y = -0.21;
+    leg.add(thigh);
+    const shortsCuff = box(0.18, 0.20, 0.20, mat(SHORTS));
+    shortsCuff.position.y = -0.10;
+    leg.add(shortsCuff);
+    const knee = new THREE.Group();
+    knee.position.y = -0.44;
+    const calf = box(0.13, 0.40, 0.14, mat(SKIN));
+    calf.position.y = -0.20;
+    knee.add(calf);
+    const shoe = box(0.13, 0.10, 0.30, mat(SHOE));
+    shoe.position.set(0, -0.44, -0.06);
+    knee.add(shoe);
+    leg.add(knee);
+    hips.add(leg);
+    return { leg, knee };
+  }
+
+  const armL = makeArm(-1), armR = makeArm(1);
+  const L = makeLeg(-1), R = makeLeg(1);
+
+  return {
+    group,
+    setPhase(phase, amp) {
+      const sL = Math.sin(phase) * amp, sR = -sL;
+      L.leg.rotation.x = sL * 0.85;
+      R.leg.rotation.x = sR * 0.85;
+      // Knee bends hardest on the recovering (back) leg; the 0.4 base keeps
+      // the figure mid-stride even at the sin zero-crossing.
+      L.knee.rotation.x = -(0.4 + Math.max(0, -sL) * 1.2) * amp;
+      R.knee.rotation.x = -(0.4 + Math.max(0, -sR) * 1.2) * amp;
+      armL.rotation.x = sR * 0.75 * amp;     // arms counter-swing the legs
+      armR.rotation.x = sL * 0.75 * amp;
+      hips.position.y = 0.98 + Math.abs(Math.sin(phase)) * 0.06 * amp;
+      hips.rotation.x = -0.14 * amp;         // forward lean
+      hips.rotation.z = sL * 0.05;           // lateral sway
+    },
+    setHidden(h) { group.visible = !h; },
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S6 · Cameras
+   ════════════════════════════════════════════════════════════════════ */
+let posLag = null;                 // chase/drone position lag vector
+const _v = new THREE.Vector3(), _fwd = new THREE.Vector3(), _right = new THREE.Vector3();
+const _eye = new THREE.Vector3(), _look = new THREE.Vector3(), _ahead = new THREE.Vector3();
+const _endPos = new THREE.Vector3(), _endLook = new THREE.Vector3();
+let currentFov = 0;
+
+function resetCameraState() {
+  posLag = null;
+  if (smoothers) for (const k of Object.keys(smoothers)) smoothers[k].reset();
+}
+
+function onCameraSwitch() {
+  posLag = null;                            // a clean cut between modes
+  if (smoothers) {
+    const cfgKey = CFG.camera === 'free' ? null : CFG.camera;
+    if (cfgKey && smoothers[cfgKey]) smoothers[cfgKey].reset();
+  }
+  if (controls) {
+    controls.enabled = CFG.camera === 'free';
+    if (CFG.camera === 'free' && runner) {
+      controls.target.copy(runner.group.position).add(_v.set(0, 1.2, 0));
+      controls.update();
+    }
+  }
+}
+
+// Computes camera.position + lookAt for the frame. zt is the finish
+// pull-back blend (0 during the run, →1 under the end card).
+function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
+  const cfg = CAM_CFG[mode] || CAM_CFG.firstperson;
+  if (cfg.fov && cfg.fov !== currentFov && mode !== 'free') {
+    camera.fov = cfg.fov;
+    currentFov = cfg.fov;
+    camera.updateProjectionMatrix();
+  }
+
+  // End pose — a pulled-back wide shot looking at the finishing runner.
+  let endH = 0;
+  if (zt > 0) {
+    endH = smoothers.end.update(d, dt);
+    fwdFromHeading(endH, _fwd);
+    _endPos.copy(runnerPos).addScaledVector(_fwd, -46).add(_v.set(0, 36, 0));
+    _endLook.copy(runnerPos).add(_v.set(0, 1.4, 0));
+  }
+
+  if (mode === 'free' && !RENDER_MODE) {
+    controls.target.lerp(_v.copy(runnerPos).add(new THREE.Vector3(0, 1.2, 0)), 0.18);
+    controls.update();
+    return;
+  }
+
+  if (mode === 'firstperson') {
+    const h = smoothers.firstperson.update(d, dt);
+    fwdFromHeading(h, _fwd);
+    rightFromHeading(h, _right);
+    const bobY = HEAD_BOB ? Math.abs(Math.sin(phase)) * 0.045 * amp : 0;
+    const bobX = HEAD_BOB ? Math.sin(phase) * 0.03 * amp : 0;
+    _eye.copy(runnerPos)
+      .add(_v.set(0, WORLD.eyeHeightM + bobY, 0))
+      .addScaledVector(_fwd, 0.25)
+      .addScaledVector(_right, bobX);
+    // Look target: a ray along the smoothed heading, biased toward a point ON
+    // the route ~30 m ahead so the path stays centered through corners. The
+    // bias only applies when that point is genuinely in FRONT of the runner —
+    // on a hairpin the route doubles back within 30 m, and aiming at it would
+    // swing the camera onto the orange ribbon it just covered.
+    sampler.posAt(Math.min(d + 30, sampler.totalM), _ahead);
+    _ahead.y = _eye.y;
+    _look.copy(_eye).addScaledVector(_fwd, 30);
+    const aheadDot = (_ahead.x - _eye.x) * _fwd.x + (_ahead.z - _eye.z) * _fwd.z;
+    if (aheadDot > 8) _look.lerp(_ahead, 0.5);   // ahead point is well in front
+    _look.y -= 1.1;                          // a touch down — road + route in frame
+  } else if (mode === 'thirdperson') {
+    // Rigid offset on the SMOOTHED heading — the flyby compresses km into
+    // seconds, so the runner moves at highway speed in video time; any
+    // wall-clock position lag would trail hundreds of meters behind.
+    const h = smoothers.thirdperson.update(d, dt);
+    fwdFromHeading(h, _fwd);
+    _eye.copy(runnerPos).addScaledVector(_fwd, -6.5).add(_v.set(0, 3.2, 0));
+    _look.copy(runnerPos).add(_v.set(0, 1.2, 0)).addScaledVector(_fwd, 6);
+  } else {  // drone
+    const h = smoothers.drone.update(d, dt);
+    fwdFromHeading(h, _fwd);
+    rightFromHeading(h, _right);
+    const drift = Math.sin(t * Math.PI * 2 * 0.15) * 10;
+    _eye.copy(runnerPos).addScaledVector(_fwd, -30).addScaledVector(_right, drift)
+      .add(_v.set(0, 55, 0));
+    _look.copy(runnerPos).addScaledVector(_fwd, 15);
+  }
+
+  if (zt > 0) {
+    _eye.lerp(_endPos, zt);
+    _look.lerp(_endLook, zt);
+  }
+  camera.position.copy(_eye);
+  camera.lookAt(_look);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S7 · Scene, timeline, drawFrame
+   ════════════════════════════════════════════════════════════════════ */
+let lastFrameWallMs = null;
+let playingRAF = null;
+let recording = null;       // { canvas, ctx } when active
+let lastDrawT = 0;
+let pillScreen = null;      // runner name pill position (stage px) or null
+
+function initRenderer() {
+  const canvas = document.getElementById('gl');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(STAGE_W, STAGE_H, false);
+  if (SHADOWS_ON) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
+  scene.background = new THREE.Color(WORLD.fogColor);
+
+  camera = new THREE.PerspectiveCamera(75, STAGE_W / STAGE_H, 0.1, 4000);
+  camera.position.set(0, 120, 120);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(new THREE.HemisphereLight(0xbfdcff, 0xe8dcc8, 1.0));
+  dirLight = new THREE.DirectionalLight(0xfff2dd, 1.6);
+  dirLight.position.set(70, 110, 50);
+  sunTarget = new THREE.Object3D();
+  scene.add(sunTarget);
+  dirLight.target = sunTarget;
+  if (SHADOWS_ON) {
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    const sc = dirLight.shadow.camera;
+    sc.left = -55; sc.right = 55; sc.top = 55; sc.bottom = -55;
+    sc.near = 10; sc.far = 400;
+    dirLight.shadow.bias = -0.0015;
+  }
+  scene.add(dirLight);
+
+  sky = buildSky();
+  scene.add(sky);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.enabled = false;
+  controls.maxPolarAngle = Math.PI / 2 - 0.02;  // keep the orbit above ground
+  controls.minDistance = 3;
+  controls.maxDistance = 400;
+}
+
+// Sun + shadow frustum follow the runner, snapped to 2 m steps so the
+// shadow texels don't swim.
+function updateSun(runnerPos) {
+  const sx = Math.round(runnerPos.x / 2) * 2, sz = Math.round(runnerPos.z / 2) * 2;
+  dirLight.position.set(sx + 70, 110, sz + 50);
+  sunTarget.position.set(sx, 0, sz);
+}
+
+function drawFrame(t) {
+  document.getElementById('overlay').classList.remove('hidden');
+  lastDrawT = t;
+
+  const tf = t;  // no splits scene in the world view — flyby occupies the full timeline
+  const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
+  const totalM = sampler.totalM;
+  const currentM = revealT * totalM;
+  const currentKm = currentM / 1000;
+
+  let dt;
+  if (RENDER_MODE) {
+    dt = 1 / FPS_RENDER;
+  } else {
+    const now = performance.now();
+    dt = (lastFrameWallMs === null) ? (1 / 60) : Math.min((now - lastFrameWallMs) / 1000, 1 / 15);
+    lastFrameWallMs = now;
+  }
+
+  // Runner along the route.
+  const runnerPos = sampler.posAt(currentM);
+  const rh = smoothers.runner.update(currentM, dt);
+  runner.group.position.set(runnerPos.x, 0, runnerPos.z);
+  runner.group.rotation.y = -rh;
+  const phase = t * DURATION_S * CADENCE_STEPS_PER_SEC * Math.PI;
+  const amp = clamp01((totalM - currentM) / 2);
+  runner.setPhase(phase, amp);
+
+  if (routeRibbon) routeRibbon.setProgress(revealT);
+
+  // Finish pull-back blend (same zt curve as flyby).
+  const zt = tf <= ZOOM_OUT_START ? 0
+    : easeInOut((tf - ZOOM_OUT_START) / (1 - ZOOM_OUT_START));
+  // First-person hides the runner until the end pull-back reveals it.
+  runner.setHidden(CFG.camera === 'firstperson' && zt < 0.18);
+
+  updateCamera(CFG.camera, currentM, dt, t, zt, runnerPos, phase, amp);
+  updateSun(runnerPos);
+  sky.position.copy(camera.position);
+
+  // ── HUD (DOM) — near-verbatim port of flyby's block ────────────────
+  document.getElementById('distVal').textContent = currentKm.toFixed(2);
+  document.getElementById('locName').textContent = routeData.name;
+  document.getElementById('dateText').textContent = routeData.dateText;
+
+  if (routeData.hasHr) {
+    const bpm = Math.round(sampler.hrAt(currentM));
+    document.getElementById('hrVal').textContent = bpm;
+    const heart = document.querySelector('.stat-card .hr-stat .heart');
+    if (heart) heart.style.animationDuration = (60 / Math.max(bpm, 40)).toFixed(2) + 's';
+  }
+
+  let elapsedSec = 0, paceSecPerKm = 0;
+  if (routeData.laps.length > 0) {
+    let kmLeft = currentKm;
+    for (let i = 0; i < routeData.laps.length && kmLeft > 0; i++) {
+      const lap = routeData.laps[i];
+      if (kmLeft >= lap.km) { elapsedSec += lap.sec; kmLeft -= lap.km; }
+      else { elapsedSec += lap.sec * (kmLeft / lap.km); kmLeft = 0; }
+    }
+    const idx = Math.min(Math.floor(currentKm), routeData.laps.length - 1);
+    const lap = routeData.laps[idx];
+    if (lap) paceSecPerKm = lap.sec / lap.km;
+  } else if (routeData.totalSec) {
+    elapsedSec = (currentKm / routeData.totalKm) * routeData.totalSec;
+    paceSecPerKm = routeData.totalSec / routeData.totalKm;
+  }
+  document.getElementById('paceVal').textContent = `${AP.fmtPace(paceSecPerKm)}/km`;
+  document.getElementById('elapsedVal').textContent = AP.fmtTime(elapsedSec);
+
+  const chip = document.getElementById('lapChip');
+  if (currentKm > 0.04) {
+    chip.style.display = 'block';
+    const lapNum = Math.min(Math.floor(currentKm) + 1, Math.max(1, Math.ceil(routeData.totalKm)));
+    chip.textContent = `LAP ${lapNum}`;
+  } else {
+    chip.style.display = 'none';
+  }
+
+  // End card rise + live HUD fade (timeline-driven, no CSS transitions).
+  const rise = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+  const liveFade = 1 - rise;
+  const statCard = document.querySelector('.stat-card');
+  if (statCard) statCard.style.opacity = String(liveFade);
+  chip.style.opacity = String(liveFade);
+
+  const endCard = document.getElementById('endCard');
+  if (rise > 0) {
+    document.getElementById('finalDist').textContent =
+      (routeData.officialKm ?? routeData.totalKm).toFixed(2);
+    document.getElementById('finalTime').textContent =
+      routeData.totalSec ? AP.fmtTime(routeData.totalSec) : '—';
+    const km = routeData.officialKm ?? routeData.totalKm;
+    const avg = (routeData.totalSec && km) ? routeData.totalSec / km : 0;
+    document.getElementById('finalPace').textContent = AP.fmtPace(avg);
+    document.getElementById('hrFinal').innerHTML = routeData.hasHr
+      ? `<span class="h">&#10084;</span> AVG ${routeData.avgHr} · MAX ${routeData.maxHr} BPM` : '';
+  }
+  endCard.style.opacity = String(rise);
+
+  // Runner name pill — projected above the runner's head (not in first-person).
+  pillScreen = null;
+  const pill = document.getElementById('namePill');
+  if (CFG.runnerName && runner.group.visible && liveFade > 0.01) {
+    _v.copy(runner.group.position).add(new THREE.Vector3(0, 2.25, 0)).project(camera);
+    if (_v.z < 1) {
+      const px = (_v.x * 0.5 + 0.5) * STAGE_W;
+      const py = (-_v.y * 0.5 + 0.5) * STAGE_H;
+      if (px > -200 && px < STAGE_W + 200 && py > -100 && py < STAGE_H + 100) {
+        pillScreen = { x: px, y: py, alpha: liveFade };
+        pill.style.display = 'block';
+        pill.style.left = px.toFixed(1) + 'px';
+        pill.style.top = py.toFixed(1) + 'px';
+        pill.style.opacity = String(liveFade);
+        pill.textContent = CFG.runnerName;
+      }
+    }
+  }
+  if (!pillScreen) pill.style.display = 'none';
+
+  renderer.render(scene, camera);
+
+  if (recording) {
+    recording.ctx.drawImage(renderer.domElement, 0, 0, STAGE_W, STAGE_H);
+    drawHUD(recording.ctx, t);
+  }
+}
+
+// render.js contract — nothing streams here, so just draw + flush a frame.
+window.renderFrame = async function (t) {
+  drawFrame(t);
+  await new Promise(r => requestAnimationFrame(r));
+};
+
+function playOnce() {
+  if (playingRAF !== null) cancelAnimationFrame(playingRAF);
+  lastFrameWallMs = null;
+  return new Promise(resolve => {
+    let startT = null;
+    function step(now) {
+      if (startT === null) startT = now;
+      const t = Math.min((now - startT) / 1000 / DURATION_S, 1);
+      drawFrame(t);
+      if (t < 1) {
+        playingRAF = requestAnimationFrame(step);
+      } else {
+        playingRAF = null;
+        resolve();
+      }
+    }
+    playingRAF = requestAnimationFrame(step);
+  });
+}
+
+function applyTiming() {
+  if (!routeData) return;
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const mult = SPEED_PRESETS[CFG.speed] ?? 1;
+  DURATION_S = computeDurationS(km) * mult;
+  window.flybyDurationS = DURATION_S;
+}
+
+const loadingEl = document.getElementById('loading');
+const loadingText = document.getElementById('loadingText');
+const loadingSub = document.getElementById('loadingSub');
+const osmRetryBtn = document.getElementById('osmRetry');
+function setLoading(shown, text, sub) {
+  loadingEl.classList.toggle('shown', shown);
+  if (text != null) loadingText.textContent = text;
+  loadingSub.textContent = sub ?? '';
+  osmRetryBtn.style.display = 'none';
+}
+
+async function startWithActivityText(text) {
+  let parsed;
+  try {
+    parsed = AP.parseActivity(text);
+  } catch (err) {
+    alert('Could not read that file: ' + err.message);
+    return;
+  }
+  if (!parsed.coords || parsed.coords.length < 2) {
+    alert('This activity has no usable GPS track.');
+    return;
+  }
+  routeData = parsed;
+  applyTiming();
+
+  // has-kml (which reveals Record + Replay) is added only AFTER the world is
+  // built — see below. Otherwise the buttons are live during the OSM fetch and
+  // a click would hit drawFrame before routeRibbon exists.
+  document.body.classList.toggle('has-hr', !!routeData.hasHr);
+  document.body.classList.remove('has-kml');
+  worldBuilt = false;
+
+  proj = makeProjection(routeData.coords);
+  sampler = makeRouteSampler(routeData, proj);
+  smoothers = {
+    firstperson: makeHeadingSmoother(CAM_CFG.firstperson),
+    thirdperson: makeHeadingSmoother(CAM_CFG.thirdperson),
+    drone: makeHeadingSmoother(CAM_CFG.drone),
+    end: makeHeadingSmoother(CAM_CFG.end),
+    runner: makeHeadingSmoother(CAM_CFG.runner),
+  };
+  resetCameraState();
+
+  // Runner (rebuilt per load so a fresh activity starts clean).
+  if (runner) {
+    scene.remove(runner.group);
+    runner.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+  runner = createRunner();
+  scene.add(runner.group);
+
+  // OSM fetch (corridor around the route) → world build.
+  setLoading(true, 'Fetching map data…');
+  let elements = null;
+  if (OSM_ENABLED) {
+    const boxes = buildRouteBoxes(routeData.coords, WORLD.corridorPadM);
+    elements = await fetchOsm(boxes, msg => setLoading(true, msg));
+  }
+  setLoading(true, 'Building world…');
+  await new Promise(r => setTimeout(r, 30));  // let the overlay paint
+  buildWorld(elements, (msg) => { loadingText.textContent = msg; });
+
+  if (elements == null && OSM_ENABLED) {
+    // Fallback world built — surface it briefly with a retry option.
+    setLoading(true, 'Map data unavailable', 'showing a minimal world');
+    osmRetryBtn.style.display = 'block';
+    setTimeout(() => { if (osmRetryBtn.style.display === 'block') setLoading(false); }, 3500);
+  } else {
+    setLoading(false);
+  }
+
+  worldBuilt = true;
+  onCameraSwitch();
+  drawFrame(0);
+  if (DEBUG) console.log('[render]', renderer.info.render);
+
+  document.body.classList.add('has-kml', 'playing');
+
+  if (RENDER_MODE) {
+    window.flybyReady = true;
+    return;
+  }
+  await playOnce();
+  document.body.classList.remove('playing');  // panel returns for replay/record
+}
+
+window.loadActivityText = startWithActivityText;
+window.loadKmlText = startWithActivityText;
+
+osmRetryBtn.addEventListener('click', async () => {
+  if (!lastBoxes) return;
+  setLoading(true, 'Fetching map data…');
+  const elements = await fetchOsm(lastBoxes, msg => setLoading(true, msg));
+  if (elements) {
+    setLoading(true, 'Building world…');
+    await new Promise(r => setTimeout(r, 30));
+    buildWorld(elements, msg => { loadingText.textContent = msg; });
+    setLoading(false);
+    drawFrame(lastDrawT);
+  } else {
+    setLoading(true, 'Map data unavailable', 'all Overpass mirrors failed — try again later');
+    osmRetryBtn.style.display = 'block';
+  }
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   S8 · Canvas HUD mirror (for the MP4 recorder)
+   ════════════════════════════════════════════════════════════════════ */
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif';
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function heartPath(ctx, cx, cy, s) {
+  ctx.beginPath();
+  const t = cy;
+  ctx.moveTo(cx, t + s * 0.30);
+  ctx.bezierCurveTo(cx, t + s * 0.10, cx - s * 0.50, t - s * 0.10, cx - s * 0.50, t + s * 0.25);
+  ctx.bezierCurveTo(cx - s * 0.50, t + s * 0.55, cx - s * 0.18, t + s * 0.78, cx, t + s * 1.0);
+  ctx.bezierCurveTo(cx + s * 0.18, t + s * 0.78, cx + s * 0.50, t + s * 0.55, cx + s * 0.50, t + s * 0.25);
+  ctx.bezierCurveTo(cx + s * 0.50, t - s * 0.10, cx, t + s * 0.10, cx, t + s * 0.30);
+  ctx.closePath();
+}
+function setLetterSpacing(ctx, px) {
+  try { ctx.letterSpacing = `${px}px`; } catch {}
+}
+
+function drawHUD(ctx, t) {
+  const W = STAGE_W, H = STAGE_H;
+  const tf = t;
+  const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
+  const totalM = sampler.totalM;
+  const currentM = revealT * totalM;
+  const currentKm = currentM / 1000;
+
+  let elapsedSec = 0, paceSecPerKm = 0;
+  if (routeData.laps.length > 0) {
+    let kmLeft = currentKm;
+    for (let i = 0; i < routeData.laps.length && kmLeft > 0; i++) {
+      const lap = routeData.laps[i];
+      if (kmLeft >= lap.km) { elapsedSec += lap.sec; kmLeft -= lap.km; }
+      else { elapsedSec += lap.sec * (kmLeft / lap.km); kmLeft = 0; }
+    }
+    const idx = Math.min(Math.floor(currentKm), routeData.laps.length - 1);
+    const lap = routeData.laps[idx];
+    if (lap) paceSecPerKm = lap.sec / lap.km;
+  } else if (routeData.totalSec) {
+    elapsedSec = (currentKm / routeData.totalKm) * routeData.totalSec;
+    paceSecPerKm = routeData.totalSec / routeData.totalKm;
+  }
+
+  const isEnding = tf >= END_FRACTION;
+  const fadeOut = 1 - clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+
+  ctx.save();
+  ctx.fillStyle = '#fff';
+
+  // Name pill above the runner (mirrors the DOM pill).
+  if (pillScreen && CFG.runnerName) {
+    const fontPx = 24;
+    ctx.save();
+    ctx.globalAlpha = pillScreen.alpha;
+    ctx.font = `700 ${fontPx}px ${FONT_STACK}`;
+    const w = ctx.measureText(CFG.runnerName).width + fontPx * 1.5;
+    const ph = fontPx * 1.8;
+    roundRect(ctx, pillScreen.x - w / 2, pillScreen.y - ph, w, ph, ph / 2);
+    ctx.fillStyle = 'rgba(10,12,18,0.78)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(CFG.runnerName, pillScreen.x, pillScreen.y - ph / 2);
+    ctx.restore();
+  }
+
+  // Meta card (top-right)
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 2;
+  ctx.font = `700 26px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 3);
+  ctx.fillText((routeData.name || '').toUpperCase(), W - 60, 60);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.globalAlpha = 0.75;
+  ctx.font = `400 16px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 4);
+  ctx.fillText(routeData.dateText || '', W - 60, 96);
+  ctx.restore();
+
+  if (fadeOut > 0) {
+    ctx.save();
+    ctx.globalAlpha = fadeOut;
+
+    const STAT_LEFT = 60;
+    const STAT_BOTTOM = H - 140;
+    const ROW_VALUE_H = 30;
+    const ROW_LABEL_H = 14;
+    const ROW_GAP = 6;
+    const ROW_H = ROW_LABEL_H + ROW_GAP + ROW_VALUE_H;
+    const DIST_GAP = 24;
+
+    const labelY = STAT_BOTTOM - ROW_H;
+    const valueY = STAT_BOTTOM - ROW_VALUE_H;
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+
+    const xPace = STAT_LEFT;
+    const xHeart = STAT_LEFT + 200;
+    const xElapsed = STAT_LEFT + (routeData.hasHr ? 400 : 220);
+
+    ctx.globalAlpha = 0.6 * fadeOut;
+    ctx.font = `400 14px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 3);
+    ctx.fillText('PACE', xPace, labelY);
+    if (routeData.hasHr) ctx.fillText('HEART', xHeart, labelY);
+    ctx.fillText('ELAPSED', xElapsed, labelY);
+
+    ctx.globalAlpha = fadeOut;
+    ctx.font = `500 30px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${AP.fmtPace(paceSecPerKm)}/km`, xPace, valueY);
+    if (routeData.hasHr) {
+      const hHeartS = 22;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, xHeart + hHeartS / 2, valueY + 4, hHeartS);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(Math.round(sampler.hrAt(currentM))), xHeart + hHeartS + 8, valueY);
+    }
+    ctx.fillText(AP.fmtTime(elapsedSec), xElapsed, valueY);
+
+    ctx.shadowColor = 'rgba(0,0,0,0.95)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 4;
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `200 128px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -4);
+    const distText = currentKm.toFixed(2);
+    const distBaseline = labelY - DIST_GAP;
+    ctx.fillText(distText, STAT_LEFT, distBaseline);
+
+    const distWidth = ctx.measureText(distText).width;
+    ctx.globalAlpha = 0.7 * fadeOut;
+    ctx.font = `400 32px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 3);
+    ctx.fillText('KM', STAT_LEFT + distWidth + 14, distBaseline - 4);
+
+    if (currentKm > 0.04) {
+      const lapNum = Math.min(Math.floor(currentKm) + 1, Math.max(1, Math.ceil(routeData.totalKm)));
+      const chipText = `LAP ${lapNum}`;
+      ctx.globalAlpha = fadeOut;
+      ctx.font = `700 18px ${FONT_STACK}`;
+      setLetterSpacing(ctx, 3);
+      ctx.textBaseline = 'middle';
+      const padX = 28, padY = 16;
+      const textW = ctx.measureText(chipText).width;
+      const chipW = textW + padX * 2;
+      const chipH = 18 + padY * 2;
+      const chipX = W - 60 - chipW;
+      const chipY = H - 160 - chipH;
+
+      ctx.shadowColor = 'rgba(252,76,2,0.4)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 4;
+      ctx.fillStyle = 'rgba(252,76,2,0.92)';
+      roundRect(ctx, chipX, chipY, chipW, chipH, chipH / 2);
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(chipText, chipX + padX, chipY + chipH / 2);
+    }
+    ctx.restore();
+  }
+
+  if (isEnding) {
+    const a = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+    ctx.globalAlpha = a;
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.75);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.35, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 32;
+    ctx.shadowOffsetY = 8;
+
+    const finalKm = (routeData.officialKm ?? routeData.totalKm).toFixed(2);
+    const finalTime = routeData.totalSec ? AP.fmtTime(routeData.totalSec) : '—';
+    const km = routeData.officialKm ?? routeData.totalKm;
+    const avgPace = (routeData.totalSec && km) ? AP.fmtPace(routeData.totalSec / km) : '—:—';
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `200 180px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -6);
+    const bigW = ctx.measureText(finalKm).width;
+    ctx.font = `400 44px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    const unitW = ctx.measureText(' KM').width;
+    const totalW = bigW + unitW;
+    const startX = (W - totalW) / 2;
+    const bigBaselineY = H / 2 + 40;
+
+    ctx.font = `200 180px ${FONT_STACK}`;
+    setLetterSpacing(ctx, -6);
+    ctx.textAlign = 'left';
+    ctx.fillText(finalKm, startX, bigBaselineY);
+
+    ctx.font = `400 44px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.globalAlpha = 0.55 * a;
+    ctx.fillText(' KM', startX + bigW, bigBaselineY);
+
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = 0.88 * a;
+    ctx.font = `400 32px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 0);
+    ctx.fillText(`in ${finalTime}`, W / 2, bigBaselineY + 30);
+
+    ctx.globalAlpha = 0.55 * a;
+    ctx.font = `400 18px ${FONT_STACK}`;
+    setLetterSpacing(ctx, 4);
+    ctx.fillText(`AVG ${avgPace} / KM`, W / 2, bigBaselineY + 80);
+
+    if (routeData.hasHr) {
+      ctx.font = `400 18px ${FONT_STACK}`;
+      setLetterSpacing(ctx, 3);
+      const hrText = `AVG ${routeData.avgHr}  ·  MAX ${routeData.maxHr} BPM`;
+      const hrTextW = ctx.measureText(hrText).width;
+      const heartS = 22;
+      const gap = 14;
+      const blockW = heartS + gap + hrTextW;
+      const hrX = W / 2 - blockW / 2;
+      const hrY = bigBaselineY + 116;
+
+      ctx.globalAlpha = 0.7 * a;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, hrX + heartS / 2, hrY - heartS, heartS);
+      ctx.fill();
+
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
+      ctx.fillText(hrText, hrX + heartS + gap, hrY);
+      ctx.textAlign = 'center';
+    }
+  }
+
+  ctx.restore();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S9 · In-browser MP4 recording (MediaRecorder)
+   ════════════════════════════════════════════════════════════════════ */
+function pickMime() {
+  const candidates = [
+    'video/mp4;codecs=avc1.640034',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm'
+  ];
+  for (const m of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+async function recordFlyby() {
+  if (!routeData || !worldBuilt) { alert('Load a KML or TCX first.'); return; }
+  if (recording || playingRAF !== null) return;  // already running
+  if (!window.MediaRecorder) { alert('Your browser does not support MediaRecorder.'); return; }
+
+  const btn = document.getElementById('recordBtn');
+  const hint = document.getElementById('hint');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = STAGE_W;
+  canvas.height = STAGE_H;
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+  try {
+    ctx.drawImage(renderer.domElement, 0, 0, STAGE_W, STAGE_H);
+    drawHUD(ctx, 0);
+  } catch (err) {
+    console.warn('Initial composite failed:', err);
+  }
+
+  const stream = canvas.captureStream(30);
+  const mime = pickMime();
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const recOpts = { videoBitsPerSecond: 12_000_000 };
+  if (mime) recOpts.mimeType = mime;
+
+  let rec;
+  try {
+    rec = new MediaRecorder(stream, recOpts);
+  } catch (err) {
+    console.error('MediaRecorder failed:', err);
+    alert('Recording failed: ' + err.message);
+    return;
+  }
+
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(resolve => rec.addEventListener('stop', resolve, { once: true }));
+
+  recording = { canvas, ctx };
+  document.body.classList.add('recording', 'playing');
+  btn.classList.add('recording');
+  btn.innerHTML = '<span class="dot"></span>Recording…';
+  if (hint) hint.textContent = 'Recording — please wait';
+
+  rec.start(250);
+
+  try {
+    resetCameraState();
+    await playOnce();
+    await new Promise(r => setTimeout(r, 1500));  // hold the end card
+  } finally {
+    try { rec.stop(); } catch {}
+    await stopped;
+    stream.getTracks().forEach(t => t.stop());
+    recording = null;
+    document.body.classList.remove('recording', 'playing');
+    btn.classList.remove('recording');
+    btn.innerHTML = '<span class="dot"></span>Record MP4';
+    if (hint) hint.textContent = '1080 × 1920 · vertical';
+  }
+
+  const blob = new Blob(chunks, { type: mime || 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const safeName = (routeData?.name || 'world').replace(/[^\w-]+/g, '_').slice(0, 40);
+  a.href = url;
+  a.download = `${safeName}-world-${stamp}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  if (ext === 'webm') {
+    console.log('Saved as .webm (this browser cannot encode MP4 directly). ' +
+      'Remux losslessly: ffmpeg -i in.webm -c copy out.mp4 — or run `node render.js <file> page=world` for true H.264.');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   S10 · Panel wiring, hotkeys, sample loading
+   ════════════════════════════════════════════════════════════════════ */
+const cameraSel = document.getElementById('cameraSel');
+const speedSel = document.getElementById('speedSel');
+cameraSel.value = CFG.camera;
+speedSel.value = CFG.speed;
+
+cameraSel.addEventListener('change', () => {
+  CFG.camera = cameraSel.value;
+  onCameraSwitch();
+});
+speedSel.addEventListener('change', () => { CFG.speed = speedSel.value; applyTiming(); });
+
+const runnerNameInput = document.getElementById('runnerName');
+runnerNameInput.value = CFG.runnerName;
+runnerNameInput.addEventListener('input', () => {
+  CFG.runnerName = runnerNameInput.value.trim();
+  try { localStorage.setItem('flybyRunnerName', CFG.runnerName); } catch {}
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const idx = ['1', '2', '3', '4'].indexOf(e.key);
+  if (idx === -1) return;
+  CFG.camera = CAMERA_MODES[idx];
+  cameraSel.value = CFG.camera;
+  onCameraSwitch();
+});
+
+document.getElementById('kmlInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('fileName').textContent = file.name;
+  const text = await file.text();
+  startWithActivityText(text);
+});
+
+function loadSampleScript() {
+  return new Promise((resolve, reject) => {
+    if (window.SAMPLE_TCX) return resolve(window.SAMPLE_TCX);
+    const s = document.createElement('script');
+    s.src = 'sample-tcx.js';
+    s.onload = () => window.SAMPLE_TCX
+      ? resolve(window.SAMPLE_TCX)
+      : reject(new Error('sample data missing'));
+    s.onerror = () => reject(new Error('could not load sample-tcx.js'));
+    document.head.appendChild(s);
+  });
+}
+document.getElementById('sampleBtn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Loading sample activity…';
+  try {
+    const text = await loadSampleScript();
+    document.getElementById('fileName').textContent = 'Sample run (8 K demo)';
+    btn.textContent = original;
+    startWithActivityText(text);
+  } catch (err) {
+    btn.textContent = original;
+    alert('Could not load the sample file: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('replayBtn').addEventListener('click', async () => {
+  if (!routeData || playingRAF !== null) return;
+  applyTiming();
+  resetCameraState();
+  document.body.classList.add('playing');
+  await playOnce();
+  document.body.classList.remove('playing');
+});
+
+document.getElementById('recordBtn').addEventListener('click', recordFlyby);
+
+initRenderer();
+window.worldReady = true;   // smoke-test hook: ESM modules loaded + GL up
+</script>
+</body>
+</html>

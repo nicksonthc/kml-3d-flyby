@@ -30,7 +30,20 @@ const baseName = path.basename(inputPath, path.extname(inputPath));
 const outPath  = path.join(__dirname, 'out', `${baseName}.mp4`);
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
-const flybyUrl = 'file://' + path.join(__dirname, 'flyby.html') + '?render=1';
+// Extra CLI args become query params, e.g.:
+//   node render.js run.tcx camera=firstperson name=Nickson zoom=close
+// `page=world` renders the low-poly 3D world view (world.html) instead.
+const cliArgs = process.argv.slice(3).filter(a => a.includes('='));
+const WORLD_PAGE = cliArgs.some(a => a === 'page=world');
+const pageFile = WORLD_PAGE ? 'world.html' : 'flyby.html';
+const extraParams = cliArgs
+  .filter(a => !a.startsWith('page='))
+  .map(a => {
+    const [k, ...rest] = a.split('=');
+    return `&${encodeURIComponent(k)}=${encodeURIComponent(rest.join('='))}`;
+  })
+  .join('');
+const flybyUrl = 'file://' + path.join(__dirname, pageFile) + '?render=1' + extraParams;
 
 console.log(`Rendering ${baseName} → ${outPath}`);
 console.log(`  ${WIDTH}x${HEIGHT} @ ${FPS}fps · duration: scaling with distance…`);
@@ -45,14 +58,19 @@ page.on('pageerror', e => console.error('  [browser-error]', e.message));
 
 await page.goto(flybyUrl);
 await page.evaluate(text => window.loadActivityText(text), activityText);
-await page.waitForFunction(() => window.flybyReady === true, { timeout: 30000 });
+// The world page may wait on an Overpass (OpenStreetMap) fetch — allow longer.
+await page.waitForFunction(() => window.flybyReady === true,
+  { timeout: WORLD_PAGE ? 150000 : 30000 });
 
 const DURATION_S = await page.evaluate(() => window.flybyDurationS);
 const TOTAL_FRAMES = Math.round(DURATION_S * FPS);
 console.log(`  duration: ${DURATION_S.toFixed(1)}s · ${TOTAL_FRAMES} frames`);
 
-console.log(`Warming tile cache for ${INITIAL_TILE_WAIT_MS}ms…`);
-await page.waitForTimeout(INITIAL_TILE_WAIT_MS);
+if (!WORLD_PAGE) {
+  // Satellite flyby only — the world page has no tiles to warm.
+  console.log(`Warming tile cache for ${INITIAL_TILE_WAIT_MS}ms…`);
+  await page.waitForTimeout(INITIAL_TILE_WAIT_MS);
+}
 
 const ff = spawn('ffmpeg', [
   '-y',
