@@ -284,6 +284,9 @@ const REVEAL_FRACTION = 0.88;     // distance mapping — identical pacing to fl
 const END_FRACTION = 0.94;        // end card rises over the last 6%
 const ZOOM_OUT_START = 0.82;      // finish pull-back start (flyby's zt)
 const SPEED_PRESETS = { slow: 1.7, medium: 1.25, fast: 0.85 };
+// First-person reads best slower — the world rushes by at eye level. Multiplies
+// on top of the Speed preset (so FP + Slow compounds).
+const CAMERA_SPEED_MULT = { firstperson: 1.5, thirdperson: 1, drone: 1, free: 1 };
 const CADENCE_STEPS_PER_SEC = 2.8;  // ~168 steps/min, same as the 2D avatar
 
 const WORLD = {
@@ -1282,7 +1285,7 @@ function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
     const bobX = HEAD_BOB ? Math.sin(phase) * 0.03 * amp : 0;
     _eye.copy(runnerPos)
       .add(_v.set(0, WORLD.eyeHeightM + bobY, 0))
-      .addScaledVector(_fwd, 0.25)
+      .addScaledVector(_fwd, 0.5)            // eye sits at the FRONT of the runner
       .addScaledVector(_right, bobX);
     // Look target: a ray along the smoothed heading, biased toward a point ON
     // the route ~30 m ahead so the path stays centered through corners. The
@@ -1519,6 +1522,10 @@ window.renderFrame = async function (t) {
 
 function playOnce() {
   if (playingRAF !== null) cancelAnimationFrame(playingRAF);
+  // Lock the duration for this play to the current camera's speed. Recomputing
+  // only here (never mid-play) keeps DURATION_S constant for the whole run, so
+  // a live camera switch changes the view without jumping t or the run cadence.
+  applyTiming();
   lastFrameWallMs = null;
   return new Promise(resolve => {
     let startT = null;
@@ -1541,7 +1548,8 @@ function applyTiming() {
   if (!routeData) return;
   const km = routeData.officialKm ?? routeData.totalKm;
   const mult = SPEED_PRESETS[CFG.speed] ?? 1;
-  DURATION_S = computeDurationS(km) * mult;
+  const camMult = CAMERA_SPEED_MULT[CFG.camera] ?? 1;
+  DURATION_S = computeDurationS(km) * mult * camMult;
   window.flybyDurationS = DURATION_S;
 }
 
