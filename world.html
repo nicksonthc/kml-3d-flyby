@@ -313,7 +313,6 @@ const CAM_CFG = {
   firstperson: { behind: 6,  ahead: 70,  tau: 1.0, deadband: 0.02, maxRate: 1.1, fov: 75 },
   thirdperson: { behind: 15, ahead: 120, tau: 1.6, deadband: 0.06, maxRate: 0.7, fov: 60 },
   drone:       { behind: 40, ahead: 260, tau: 2.4, deadband: 0.10, maxRate: 0.4, fov: 55 },
-  end:         { behind: 40, ahead: 260, tau: 2.6, deadband: 0.10, maxRate: 0.35 },
   runner:      { behind: 3,  ahead: 14,  tau: 0.30, deadband: 0,   maxRate: 4.0 },
 };
 const CAMERA_MODES = ['firstperson', 'thirdperson', 'drone', 'free'];
@@ -401,11 +400,18 @@ function makeRouteSampler(routeData, proj) {
   const coords = routeData.coords, cum = routeData.cumDists;
   const n = coords.length;
   const xs = new Float64Array(n), zs = new Float64Array(n);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (let i = 0; i < n; i++) {
     const p = proj.toLocal(coords[i]);
     xs[i] = p.x; zs[i] = p.z;
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
   }
   const totalM = cum[n - 1];
+  // Route bounding box → centre + radius, used to frame the whole route in the
+  // end-of-run overview ("see the entire route map").
+  const centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+  const radius = 0.5 * Math.hypot(maxX - minX, maxZ - minZ) || 50;
 
   function posAt(d, out) {
     out = out || new THREE.Vector3();
@@ -423,6 +429,7 @@ function makeRouteSampler(routeData, proj) {
 
   return {
     totalM, xs, zs,
+    minX, maxX, minZ, maxZ, centerX, centerZ, radius,
     posAt,
     hrAt(d) { return AP.hrAtDist(routeData, d); },
   };
@@ -766,6 +773,19 @@ function buildRouteRibbon() {
     new THREE.MeshBasicMaterial({ color: ROUTE_COLOR, side: THREE.DoubleSide }));
   group.add(top);
 
+  // Overview trace — a much wider orange ribbon, raised, that fades in only for
+  // the end-of-run zoom-out. The 2.4 m run ribbon is ~1 px from kilometres up;
+  // this one is sized to the route so the whole shape reads as a map. Width
+  // scales with route size so it stays visible at the (bbox-fit) overview
+  // distance, regardless of run length.
+  const ovWidth = clamp(sampler.radius * 0.013, 6, 60);
+  const ovGeo = polylineRibbon(pts, ovWidth, 3.0);
+  const ovMat = new THREE.MeshBasicMaterial({ color: ROUTE_COLOR, side: THREE.DoubleSide,
+    transparent: true, opacity: 0, depthWrite: false });
+  const overview = new THREE.Mesh(ovGeo, ovMat);
+  overview.renderOrder = 2;
+  group.add(overview);
+
   const segCount = topGeo.getIndex().count / 6;
   insertLineIntoGrid(occupancy, pts, 6);
 
@@ -773,7 +793,8 @@ function buildRouteRibbon() {
     group,
     setProgress(f) {
       top.geometry.setDrawRange(0, Math.max(0, Math.floor(clamp01(f) * segCount)) * 6);
-    }
+    },
+    setOverview(a) { ovMat.opacity = clamp01(a); },
   };
 }
 
@@ -1262,13 +1283,19 @@ function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
     camera.updateProjectionMatrix();
   }
 
-  // End pose — a pulled-back wide shot looking at the finishing runner.
-  let endH = 0;
+  // End pose — a high, angled drone shot pulled far enough back to frame the
+  // ENTIRE route map (centre + radius), not just the finishing runner. The
+  // distance is fit to the route's bounding radius and the live FOV; the camera
+  // sits south of centre and looks down ~58° (north-up, map-like).
   if (zt > 0) {
-    endH = smoothers.end.update(d, dt);
-    fwdFromHeading(endH, _fwd);
-    _endPos.copy(runnerPos).addScaledVector(_fwd, -46).add(_v.set(0, 36, 0));
-    _endLook.copy(runnerPos).add(_v.set(0, 1.4, 0));
+    const vHalf = THREE.MathUtils.degToRad(camera.fov) / 2;
+    const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+    const halfAngle = Math.min(vHalf, hHalf);          // narrower axis is limiting
+    const fitDist = (sampler.radius * 1.25) / Math.tan(halfAngle);
+    const ang = Math.PI * 58 / 180;                    // down-tilt from horizontal
+    _endPos.set(sampler.centerX, fitDist * Math.sin(ang),
+      sampler.centerZ + fitDist * Math.cos(ang));
+    _endLook.set(sampler.centerX, 0, sampler.centerZ);
   }
 
   if (mode === 'free' && !RENDER_MODE) {
@@ -1335,7 +1362,12 @@ let pillScreen = null;      // runner name pill position (stage px) or null
 
 function initRenderer() {
   const canvas = document.getElementById('gl');
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  // logarithmicDepthBuffer: the end overview pulls the camera kilometres up, so
+  // the far plane is huge (50 km) while first-person needs a 0.1 m near plane —
+  // a log depth buffer keeps precision across that range (no z-fighting on the
+  // stacked ground/road/ribbon up close).
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true,
+    preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(STAGE_W, STAGE_H, false);
   if (SHADOWS_ON) {
@@ -1347,7 +1379,7 @@ function initRenderer() {
   scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
   scene.background = new THREE.Color(WORLD.fogColor);
 
-  camera = new THREE.PerspectiveCamera(75, STAGE_W / STAGE_H, 0.1, 4000);
+  camera = new THREE.PerspectiveCamera(75, STAGE_W / STAGE_H, 0.1, 50000);
   camera.position.set(0, 120, 120);
   camera.lookAt(0, 0, 0);
 
@@ -1425,6 +1457,20 @@ function drawFrame(t) {
   updateCamera(CFG.camera, currentM, dt, t, zt, runnerPos, phase, amp);
   updateSun(runnerPos);
   sky.position.copy(camera.position);
+
+  // End-of-run overview: fade in the wide route trace and push the fog out so
+  // the whole route (kilometres across) is visible from the high drone shot.
+  // Resets to the close-up fog whenever zt is 0.
+  if (routeRibbon) routeRibbon.setOverview(zt);
+  if (zt > 0) {
+    const reach = (sampler.radius * 1.25) / Math.tan(Math.atan(Math.tan(
+      THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect)) + sampler.radius;
+    scene.fog.near = WORLD.fogNear + (reach * 0.25 - WORLD.fogNear) * zt;
+    scene.fog.far = WORLD.fogFar + (reach * 1.6 - WORLD.fogFar) * zt;
+  } else if (scene.fog.far !== WORLD.fogFar) {
+    scene.fog.near = WORLD.fogNear;
+    scene.fog.far = WORLD.fogFar;
+  }
 
   // ── HUD (DOM) — near-verbatim port of flyby's block ────────────────
   document.getElementById('distVal').textContent = currentKm.toFixed(2);
@@ -1592,7 +1638,6 @@ async function startWithActivityText(text) {
     firstperson: makeHeadingSmoother(CAM_CFG.firstperson),
     thirdperson: makeHeadingSmoother(CAM_CFG.thirdperson),
     drone: makeHeadingSmoother(CAM_CFG.drone),
-    end: makeHeadingSmoother(CAM_CFG.end),
     runner: makeHeadingSmoother(CAM_CFG.runner),
   };
   resetCameraState();
