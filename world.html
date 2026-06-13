@@ -1420,6 +1420,7 @@ function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
    ════════════════════════════════════════════════════════════════════ */
 let lastFrameWallMs = null;
 let playingRAF = null;
+let playToken = 0;          // bumped per play; a superseded play stops cleanly
 let recording = null;       // { canvas, ctx } when active
 let lastDrawT = 0;
 let pillScreen = null;      // runner name pill position (stage px) or null
@@ -1715,16 +1716,21 @@ window.renderFrame = async function (t) {
   await new Promise(r => requestAnimationFrame(r));
 };
 
+// Plays the timeline once. Resolves true when it runs to the end, or false if
+// a newer play superseded it (e.g. the user hit Record mid-autoplay) — callers
+// use that to avoid clobbering shared UI state. Bumping playToken makes the
+// previous play's loop bow out on its next frame.
 function playOnce() {
-  if (playingRAF !== null) cancelAnimationFrame(playingRAF);
   // Lock the duration for this play to the current camera's speed. Recomputing
   // only here (never mid-play) keeps DURATION_S constant for the whole run, so
   // a live camera switch changes the view without jumping t or the run cadence.
   applyTiming();
   lastFrameWallMs = null;
+  const myToken = ++playToken;
   return new Promise(resolve => {
     let startT = null;
     function step(now) {
+      if (myToken !== playToken) { resolve(false); return; }  // superseded
       if (startT === null) startT = now;
       const t = Math.min((now - startT) / 1000 / DURATION_S, 1);
       drawFrame(t);
@@ -1732,7 +1738,7 @@ function playOnce() {
         playingRAF = requestAnimationFrame(step);
       } else {
         playingRAF = null;
-        resolve();
+        resolve(true);
       }
     }
     playingRAF = requestAnimationFrame(step);
@@ -1842,8 +1848,11 @@ async function startWithActivityText(text) {
     window.flybyReady = true;
     return;
   }
-  await playOnce();
-  document.body.classList.remove('playing');  // panel returns for replay/record
+  // Auto-play once. If the user hits Record mid-autoplay, playOnce resolves
+  // false (superseded) — leave the 'playing' state to recordFlyby, which is
+  // now driving the timeline.
+  const completed = await playOnce();
+  if (completed && !recording) document.body.classList.remove('playing');
 }
 
 window.loadActivityText = startWithActivityText;
@@ -2278,7 +2287,7 @@ function pickMime() {
 
 async function recordFlyby() {
   if (!routeData || !worldBuilt) { alert('Load a KML or TCX first.'); return; }
-  if (recording || playingRAF !== null) return;  // already running
+  if (recording) return;  // already recording (an in-flight autoplay is fine — playOnce supersedes it)
   if (!window.MediaRecorder) { alert('Your browser does not support MediaRecorder.'); return; }
 
   const btn = document.getElementById('recordBtn');
@@ -2289,6 +2298,10 @@ async function recordFlyby() {
   canvas.height = STAGE_H;
   const ctx = canvas.getContext('2d', { alpha: false });
 
+  // Seed one composited frame at t=0 (Record may interrupt the autoplay, so
+  // draw the start frame rather than capturing wherever the autoplay was).
+  resetCameraState();
+  drawFrame(0);
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, STAGE_W, STAGE_H);
   try {
@@ -2326,7 +2339,6 @@ async function recordFlyby() {
   rec.start(250);
 
   try {
-    resetCameraState();
     await playOnce();
     await new Promise(r => setTimeout(r, 1500));  // hold the end card
   } finally {
@@ -2427,12 +2439,12 @@ document.getElementById('sampleBtn').addEventListener('click', async (e) => {
 });
 
 document.getElementById('replayBtn').addEventListener('click', async () => {
-  if (!routeData || playingRAF !== null) return;
+  if (!routeData || playingRAF !== null || recording) return;
   applyTiming();
   resetCameraState();
   document.body.classList.add('playing');
-  await playOnce();
-  document.body.classList.remove('playing');
+  const completed = await playOnce();
+  if (completed && !recording) document.body.classList.remove('playing');
 });
 
 document.getElementById('recordBtn').addEventListener('click', recordFlyby);

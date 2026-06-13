@@ -15,12 +15,15 @@ page.on('console', m => console.log('[browser]', m.text()));
 await page.goto(url);
 await page.waitForFunction(() => window.worldReady === true, { timeout: 20000 });
 await page.click('#sampleBtn');
-// Wait for the world to build AND the initial playback to finish: has-kml is
-// added only post-build, and `playing` is removed when playOnce resolves.
+// Wait until the world is built and the AUTO-PLAY is running (has-kml + playing),
+// then hit Record mid-autoplay — it must interrupt the autoplay and record the
+// full run from the start (the bug: Record was a no-op until autoplay finished).
 await page.waitForFunction(
-  () => document.body.classList.contains('has-kml') && !document.body.classList.contains('playing'),
+  () => document.body.classList.contains('has-kml') && document.body.classList.contains('playing'),
   null, { timeout: 240000 });
-console.log('playback finished, starting recording…');
+await page.waitForTimeout(2000);  // let the autoplay run a couple of seconds first
+const playingBefore = await page.evaluate(() => document.body.classList.contains('playing'));
+console.log('autoplay running (playing=' + playingBefore + '); clicking Record mid-autoplay…');
 
 const downloadP = page.waitForEvent('download', { timeout: 240000 });
 await page.click('#recordBtn');
