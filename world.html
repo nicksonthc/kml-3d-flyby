@@ -152,6 +152,35 @@
   .end-card .hr-final:empty { display:none; }
   .end-card .center { text-align:center; }
 
+  /* Per-km splits scene (TCX) — plays after the end card, over the overview.
+     Opacity + drift are driven per-frame from the timeline (drawSplitsDOM), not
+     CSS transitions, so render.js screenshots and the recorder stay in sync. */
+  .splits-card { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; opacity:0; pointer-events:none;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.88) 100%); }
+  .splits-inner { width:900px; transform-origin:center center; }
+  .splits-title { text-align:center; font-size:22px; font-weight:600;
+    letter-spacing:9px; text-transform:uppercase; opacity:0.5; margin-bottom:46px; }
+  .split-row { display:grid; grid-template-columns:62px 116px 1fr 132px;
+    align-items:center; column-gap:26px; padding:9px 0; opacity:0; }
+  .split-row .sp-idx { font-size:40px; font-weight:200; opacity:0.45;
+    text-align:right; font-variant-numeric:tabular-nums; line-height:1; }
+  .split-row .sp-pace { font-size:34px; font-weight:300;
+    font-variant-numeric:tabular-nums; text-shadow:0 2px 8px rgba(0,0,0,0.7); }
+  .split-row .sp-bar { height:14px; background:rgba(255,255,255,0.10);
+    border-radius:999px; overflow:hidden; }
+  .split-row .sp-bar-fill { height:100%; width:0%; background:#FC4C02;
+    border-radius:999px; box-shadow:0 0 14px rgba(252,76,2,0.45); }
+  .split-row .sp-hr { display:flex; align-items:center; justify-content:flex-end;
+    gap:9px; font-size:30px; font-weight:300; font-variant-numeric:tabular-nums; }
+  .split-row .sp-hr .sp-heart { color:#ff414e; font-size:24px; }
+  .split-row.fast .sp-idx { opacity:0.9; }
+  .split-row.fast .sp-pace { color:#FC4C02; font-weight:500; }
+  .splits-foot { text-align:center; margin-top:42px; font-size:20px;
+    letter-spacing:3px; text-transform:uppercase; opacity:0; }
+  .splits-foot .h { color:#ff414e; }
+
   /* Loading overlay — shown while Overpass data downloads and the world builds. */
   #loading { position:absolute; inset:0; z-index:20; display:none;
     align-items:center; justify-content:center; flex-direction:column; gap:28px;
@@ -237,6 +266,13 @@
         <div class="hr-final" id="hrFinal"></div>
       </div>
     </div>
+    <div class="splits-card" id="splitsCard">
+      <div class="splits-inner" id="splitsInner">
+        <div class="splits-title">KM SPLITS</div>
+        <div class="splits-rows" id="splitsRows"></div>
+        <div class="splits-foot" id="splitsFoot"></div>
+      </div>
+    </div>
   </div>
   <div id="loading">
     <div class="spinner"></div>
@@ -281,8 +317,23 @@ function computeDurationS(km) {
     Math.min(DURATION_MAX_S, DURATION_BASE_S + km * DURATION_PER_KM_S));
 }
 const REVEAL_FRACTION = 0.88;     // distance mapping — identical pacing to flyby
-const END_FRACTION = 0.94;        // end card rises over the last 6%
+const END_FRACTION = 0.94;        // end card rises over the last 6% of the run
 const ZOOM_OUT_START = 0.82;      // finish pull-back start (flyby's zt)
+
+// TCX end sequence (same as the flyby): after the run + overview zoom-out, the
+// summary card holds for a beat, then a per-km splits scene plays. The splits
+// length scales with the number of kilometres.
+const END_HOLD_S = 2.4;
+const SPLITS_MIN_S = 5;
+const SPLITS_MAX_S = 16;
+const SPLITS_PER_ROW_S = 0.55;
+function computeSplitsS(n) {
+  return Math.max(SPLITS_MIN_S, Math.min(SPLITS_MAX_S, 3 + n * SPLITS_PER_ROW_S));
+}
+// Scene boundaries as fractions of DURATION_S, recomputed on each load. Default
+// (no splits) makes the whole timeline the run + overview, as before.
+let SCENE = { flybyEnd: 1, splitsStart: 1 };
+
 const SPEED_PRESETS = { slow: 1.7, medium: 1.25, fast: 0.85 };
 // First-person reads best slower — the world rushes by at eye level. Multiplies
 // on top of the Speed preset (so FP + Slow compounds).
@@ -320,6 +371,11 @@ const CAMERA_MODES = ['firstperson', 'thirdperson', 'drone', 'free'];
 function easeInOut(t) {
   t = Math.min(Math.max(t, 0), 1);
   return 0.5 - 0.5 * Math.cos(Math.PI * t);
+}
+// Decelerating ease — splits bars arrive fast then "land" with weight.
+function easeOutExpo(t) {
+  t = Math.min(Math.max(t, 0), 1);
+  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 }
 function clamp01(x) { return Math.min(Math.max(x, 0), 1); }
 function clamp(x, a, b) { return Math.min(Math.max(x, a), b); }
@@ -1367,6 +1423,76 @@ let playingRAF = null;
 let recording = null;       // { canvas, ctx } when active
 let lastDrawT = 0;
 let pillScreen = null;      // runner name pill position (stage px) or null
+let splitsScale = 1;        // uniform scale to fit the splits rows in the stage
+let fastestSplitIdx = -1;   // the highlighted (fastest km) row
+
+// Build the splits DOM once per load and precompute each bar's length (encodes
+// speed: fastest km = full bar, slowest = 0.32) + the fastest-km highlight.
+// Ported from flyby.html.
+function prepSplits() {
+  const rowsEl = document.getElementById('splitsRows');
+  const footEl = document.getElementById('splitsFoot');
+  rowsEl.innerHTML = '';
+  footEl.innerHTML = '';
+  fastestSplitIdx = -1;
+  splitsScale = 1;
+  const splits = routeData.splits || [];
+  if (splits.length < 2) return;
+
+  const speeds = splits.map(s => 1 / s.paceSecPerKm);
+  const sMin = Math.min(...speeds), sMax = Math.max(...speeds);
+  let fastest = 0;
+  splits.forEach((s, i) => {
+    s._frac = (sMax === sMin) ? 1 : 0.32 + 0.68 * (speeds[i] - sMin) / (sMax - sMin);
+    if (speeds[i] > speeds[fastest]) fastest = i;
+  });
+  fastestSplitIdx = fastest;
+
+  splits.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'split-row' + (i === fastest ? ' fast' : '');
+    const hr = s.avgHr != null
+      ? `<span class="sp-heart">&#10084;</span><span>${s.avgHr}</span>` : '';
+    row.innerHTML =
+      `<div class="sp-idx">${s.idx}</div>` +
+      `<div class="sp-pace">${AP.fmtPace(s.paceSecPerKm)}</div>` +
+      `<div class="sp-bar"><div class="sp-bar-fill"></div></div>` +
+      `<div class="sp-hr">${hr}</div>`;
+    rowsEl.appendChild(row);
+  });
+
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const avgPace = (routeData.totalSec && km) ? AP.fmtPace(routeData.totalSec / km) : '—:—';
+  footEl.innerHTML = `AVG ${avgPace} / KM` + (routeData.hasHr
+    ? `&nbsp;&nbsp;·&nbsp;&nbsp;<span class="h">&#10084;</span> ${routeData.avgHr} AVG · ${routeData.maxHr} MAX` : '');
+
+  const naturalH = 30 + 46 + splits.length * 72 + 42 + 40;
+  splitsScale = Math.min(1, (STAGE_H - 2 * 140) / naturalH);
+}
+
+// Per-frame splits update. `sp` is 0..1 progress through the splits scene.
+function drawSplitsDOM(sp) {
+  const splits = routeData.splits || [];
+  const n = splits.length;
+  const appear = clamp01(sp / 0.10);
+  const card = document.getElementById('splitsCard');
+  card.style.opacity = String(appear);
+  const drift = (1 - appear) * 34;  // rises into place — continuous with the summary
+  document.getElementById('splitsInner').style.transform =
+    `translateY(${drift.toFixed(1)}px) scale(${splitsScale.toFixed(4)})`;
+
+  const rows = document.getElementById('splitsRows').children;
+  for (let i = 0; i < n; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const start = 0.08 + (i / n) * 0.42;       // staggered reveal
+    const rp = easeOutExpo(clamp01((sp - start) / 0.18));
+    row.style.opacity = String(rp);
+    const fill = row.querySelector('.sp-bar-fill');
+    if (fill) fill.style.width = (splits[i]._frac * rp * 100).toFixed(1) + '%';
+  }
+  document.getElementById('splitsFoot').style.opacity = clamp01((sp - 0.58) / 0.14).toFixed(3);
+}
 
 function initRenderer() {
   const canvas = document.getElementById('gl');
@@ -1430,7 +1556,11 @@ function drawFrame(t) {
   document.getElementById('overlay').classList.remove('hidden');
   lastDrawT = t;
 
-  const tf = t;  // no splits scene in the world view — flyby occupies the full timeline
+  // tf = progress within the run+overview portion. The end-card hold + splits
+  // scene (TCX) are appended after it; without splits SCENE.flybyEnd === 1 so
+  // tf === t. Clamping at 1 freezes the run/camera at the overview while the
+  // splits scene plays over it.
+  const tf = SCENE.flybyEnd >= 1 ? t : Math.min(t / SCENE.flybyEnd, 1);
   const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
   const totalM = sampler.totalM;
   const currentM = revealT * totalM;
@@ -1519,15 +1649,21 @@ function drawFrame(t) {
     chip.style.display = 'none';
   }
 
-  // End card rise + live HUD fade (timeline-driven, no CSS transitions).
-  const rise = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
-  const liveFade = 1 - rise;
+  // End sequence (live HUD → summary card → splits) — every opacity is driven
+  // from the timeline (no CSS transitions) so the render.js path is
+  // deterministic regardless of render speed.
+  const rise = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));   // summary fades in
+  const inSplits = SCENE.splitsStart < 1 && t >= SCENE.splitsStart;
+  const sp = inSplits ? clamp01((t - SCENE.splitsStart) / (1 - SCENE.splitsStart)) : 0;
+  const summaryOpacity = inSplits ? clamp01(1 - sp / 0.10) : rise;   // cross-fade to splits
+  const liveFade = inSplits ? 0 : (1 - rise);                       // live HUD fades out
+
   const statCard = document.querySelector('.stat-card');
   if (statCard) statCard.style.opacity = String(liveFade);
   chip.style.opacity = String(liveFade);
 
   const endCard = document.getElementById('endCard');
-  if (rise > 0) {
+  if (summaryOpacity > 0) {
     document.getElementById('finalDist').textContent =
       (routeData.officialKm ?? routeData.totalKm).toFixed(2);
     document.getElementById('finalTime').textContent =
@@ -1538,7 +1674,12 @@ function drawFrame(t) {
     document.getElementById('hrFinal').innerHTML = routeData.hasHr
       ? `<span class="h">&#10084;</span> AVG ${routeData.avgHr} · MAX ${routeData.maxHr} BPM` : '';
   }
-  endCard.style.opacity = String(rise);
+  endCard.style.opacity = String(summaryOpacity);
+
+  // Splits scene (cross-fades up out of the summary — continuous, not a cut).
+  const splitsCard = document.getElementById('splitsCard');
+  if (inSplits) drawSplitsDOM(sp);
+  else if (splitsCard) splitsCard.style.opacity = '0';
 
   // Runner name pill — projected above the runner's head (not in first-person).
   pillScreen = null;
@@ -1603,7 +1744,17 @@ function applyTiming() {
   const km = routeData.officialKm ?? routeData.totalKm;
   const mult = SPEED_PRESETS[CFG.speed] ?? 1;
   const camMult = CAMERA_SPEED_MULT[CFG.camera] ?? 1;
-  DURATION_S = computeDurationS(km) * mult * camMult;
+  // Timeline = run + overview zoom-out (the "flyby" portion), then for TCX with
+  // splits an end-card hold + a per-km splits scene (same shape as flyby.html).
+  const flybyS = computeDurationS(km) * mult * camMult;
+  const hasSplits = (routeData.splits?.length ?? 0) >= 2;
+  const splitsS = hasSplits ? computeSplitsS(routeData.splits.length) : 0;
+  const endHoldS = hasSplits ? END_HOLD_S : 0;
+  DURATION_S = flybyS + endHoldS + splitsS;
+  SCENE = {
+    flybyEnd: flybyS / DURATION_S,
+    splitsStart: hasSplits ? (flybyS + endHoldS) / DURATION_S : 1
+  };
   window.flybyDurationS = DURATION_S;
 }
 
@@ -1632,6 +1783,8 @@ async function startWithActivityText(text) {
   }
   routeData = parsed;
   applyTiming();
+  prepSplits();                                   // build the per-km splits DOM
+  document.getElementById('splitsCard').style.opacity = '0';
 
   // has-kml (which reveals Record + Replay) is added only AFTER the world is
   // built — see below. Otherwise the buttons are live during the OSM fetch and
@@ -1742,7 +1895,7 @@ function setLetterSpacing(ctx, px) {
 
 function drawHUD(ctx, t) {
   const W = STAGE_W, H = STAGE_H;
-  const tf = t;
+  const tf = SCENE.flybyEnd >= 1 ? t : Math.min(t / SCENE.flybyEnd, 1);
   const revealT = easeInOut(Math.min(tf / REVEAL_FRACTION, 1));
   const totalM = sampler.totalM;
   const currentM = revealT * totalM;
@@ -1765,7 +1918,12 @@ function drawHUD(ctx, t) {
   }
 
   const isEnding = tf >= END_FRACTION;
-  const fadeOut = 1 - clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+  // Splits scene cross-fade: the summary fades out as the splits arrive.
+  const inSplits = t >= SCENE.splitsStart && SCENE.splitsStart < 1;
+  const sp = inSplits ? clamp01((t - SCENE.splitsStart) / (1 - SCENE.splitsStart)) : 0;
+  const summaryAlpha = inSplits ? clamp01(1 - sp / 0.10) : 1;
+  // Live HUD fades out over the summary-rise window; gone entirely during splits.
+  const fadeOut = inSplits ? 0 : (1 - clamp01((tf - END_FRACTION) / (1 - END_FRACTION)));
 
   ctx.save();
   ctx.fillStyle = '#fff';
@@ -1897,8 +2055,8 @@ function drawHUD(ctx, t) {
     ctx.restore();
   }
 
-  if (isEnding) {
-    const a = clamp01((tf - END_FRACTION) / (1 - END_FRACTION));
+  if (isEnding && summaryAlpha > 0.01) {
+    const a = summaryAlpha;   // fades out as the splits scene cross-fades in
     ctx.globalAlpha = a;
     const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.75);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -1974,6 +2132,128 @@ function drawHUD(ctx, t) {
       ctx.textAlign = 'center';
     }
   }
+
+  // Splits scene — drawn last so its backdrop sits above the fading summary.
+  if (inSplits) drawSplitsCanvas(ctx, sp);
+
+  ctx.restore();
+}
+
+// Canvas mirror of the DOM splits scene (used by the in-browser MP4 recorder).
+// Geometry tracks the CSS: 900px content centred, scaled by splitsScale.
+// Ported from flyby.html.
+function drawSplitsCanvas(ctx, sp) {
+  const splits = routeData.splits || [];
+  const n = splits.length;
+  const alpha = clamp01(sp / 0.10);
+  if (n < 2 || alpha <= 0) return;
+
+  const W = STAGE_W, H = STAGE_H, s = splitsScale, cx = W / 2;
+  const drift = (1 - alpha) * 34;
+
+  ctx.save();
+
+  // Backdrop darkening (fades in with the scene).
+  ctx.globalAlpha = alpha;
+  const bg = ctx.createRadialGradient(cx, H/2, 0, cx, H/2, Math.max(W, H) * 0.7);
+  bg.addColorStop(0, 'rgba(0,0,0,0.58)');
+  bg.addColorStop(1, 'rgba(0,0,0,0.88)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // map an unscaled x (content 90..990, centre 540) to a centre-scaled pixel x
+  const sx = v => cx + (v - 540) * s;
+  const idxR = sx(152), paceL = sx(178), barL = sx(320), barR = sx(832), hrR = sx(990);
+  const barMaxW = barR - barL, barH = 14 * s;
+
+  const rowH = 72 * s, titleH = 30 * s, titleGap = 46 * s, footGap = 42 * s, footH = 40 * s;
+  const blockH = titleH + titleGap + n * rowH + footGap + footH;
+  let y = (H - blockH) / 2 + drift;
+
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 8 * s;
+  ctx.shadowOffsetY = 2 * s;
+
+  // Title
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.font = `600 ${22*s}px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 9 * s);
+  ctx.fillText('KM SPLITS', cx, y);
+  setLetterSpacing(ctx, 0);
+  y += titleH + titleGap;
+
+  // Rows
+  for (let i = 0; i < n; i++) {
+    const start = 0.08 + (i / n) * 0.42;
+    const rp = easeOutExpo(clamp01((sp - start) / 0.18));
+    const cyRow = y + rowH / 2;
+    const isFast = i === fastestSplitIdx;
+    y += rowH;
+    if (rp <= 0) continue;
+    const rowA = alpha * rp;
+
+    // bar track + fill
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.globalAlpha = rowA * 0.12;
+    ctx.fillStyle = '#fff';
+    roundRect(ctx, barL, cyRow - barH/2, barMaxW, barH, barH/2); ctx.fill();
+    const fw = barMaxW * splits[i]._frac * rp;
+    if (fw > 0.5) {
+      ctx.globalAlpha = rowA;
+      ctx.fillStyle = ROUTE_COLOR;
+      roundRect(ctx, barL, cyRow - barH/2, fw, barH, barH/2); ctx.fill();
+    }
+
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 8 * s; ctx.shadowOffsetY = 2 * s;
+    ctx.textBaseline = 'middle';
+
+    // index
+    ctx.globalAlpha = rowA * (isFast ? 0.9 : 0.45);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'right';
+    ctx.font = `200 ${40*s}px ${FONT_STACK}`;
+    ctx.fillText(String(splits[i].idx), idxR, cyRow);
+
+    // pace
+    ctx.globalAlpha = rowA;
+    ctx.fillStyle = isFast ? ROUTE_COLOR : '#fff';
+    ctx.textAlign = 'left';
+    ctx.font = `${isFast ? 500 : 300} ${34*s}px ${FONT_STACK}`;
+    ctx.fillText(AP.fmtPace(splits[i].paceSecPerKm), paceL, cyRow);
+
+    // heart rate (heart + bpm, right-aligned)
+    if (splits[i].avgHr != null) {
+      ctx.globalAlpha = rowA;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'right';
+      ctx.font = `300 ${30*s}px ${FONT_STACK}`;
+      const bpm = String(splits[i].avgHr);
+      ctx.fillText(bpm, hrR, cyRow);
+      const bw = ctx.measureText(bpm).width;
+      ctx.fillStyle = '#ff414e';
+      heartPath(ctx, hrR - bw - 20 * s, cyRow - 11 * s, 22 * s);
+      ctx.fill();
+    }
+  }
+
+  // Footer
+  y += footGap;
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 8 * s; ctx.shadowOffsetY = 2 * s;
+  ctx.globalAlpha = alpha * clamp01((sp - 0.58) / 0.14);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = `400 ${20*s}px ${FONT_STACK}`;
+  setLetterSpacing(ctx, 3 * s);
+  const km = routeData.officialKm ?? routeData.totalKm;
+  const avgPace = (routeData.totalSec && km) ? AP.fmtPace(routeData.totalSec / km) : '—:—';
+  let foot = `AVG ${avgPace} / KM`;
+  if (routeData.hasHr) foot += `    ·    ${routeData.avgHr} AVG · ${routeData.maxHr} MAX`;
+  ctx.fillText(foot, cx, y);
+  setLetterSpacing(ctx, 0);
 
   ctx.restore();
 }
