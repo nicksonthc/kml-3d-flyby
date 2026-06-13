@@ -1299,12 +1299,20 @@ function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
   }
 
   if (mode === 'free' && !RENDER_MODE) {
-    controls.target.lerp(_v.copy(runnerPos).add(new THREE.Vector3(0, 1.2, 0)), 0.18);
-    controls.update();
-    return;
-  }
-
-  if (mode === 'firstperson') {
+    if (zt <= 0) {
+      // Free orbit, tracking the runner — user drives the camera.
+      controls.enabled = true;
+      controls.target.lerp(_v.copy(runnerPos).add(new THREE.Vector3(0, 1.2, 0)), 0.18);
+      controls.update();
+      return;
+    }
+    // End pull-back: take the camera back from the orbit controls and seed the
+    // blend (below) from wherever the user left it, so free camera also eases
+    // out to the full-route overview instead of staying locked on the runner.
+    controls.enabled = false;
+    _eye.copy(camera.position);
+    _look.copy(controls.target);
+  } else if (mode === 'firstperson') {
     const h = smoothers.firstperson.update(d, dt);
     fwdFromHeading(h, _fwd);
     rightFromHeading(h, _right);
@@ -1333,7 +1341,7 @@ function updateCamera(mode, d, dt, t, zt, runnerPos, phase, amp) {
     fwdFromHeading(h, _fwd);
     _eye.copy(runnerPos).addScaledVector(_fwd, -6.5).add(_v.set(0, 3.2, 0));
     _look.copy(runnerPos).add(_v.set(0, 1.2, 0)).addScaledVector(_fwd, 6);
-  } else {  // drone
+  } else if (mode === 'drone') {
     const h = smoothers.drone.update(d, dt);
     fwdFromHeading(h, _fwd);
     rightFromHeading(h, _right);
